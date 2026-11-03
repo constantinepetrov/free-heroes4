@@ -4,7 +4,7 @@ mkdir -p android/smoke-output
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb logcat -c
-adb shell am instrument -w org.openh4.android.test/org.openh4.android.ImportSmokeTest | tee android/smoke-output/import-test.txt
+timeout 90s adb shell am instrument -w org.openh4.android.test/org.openh4.android.ImportSmokeTest | tee android/smoke-output/import-test.txt
 grep -q 'PASS:' android/smoke-output/import-test.txt
 adb shell am start -W -n org.openh4.android/.LauncherActivity
 sleep 3

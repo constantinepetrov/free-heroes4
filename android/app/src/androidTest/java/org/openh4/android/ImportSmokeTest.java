@@ -5,6 +5,7 @@ import android.os.Bundle;
 import java.io.File;
 import java.nio.file.Files;
 public final class ImportSmokeTest extends Instrumentation {
+    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
