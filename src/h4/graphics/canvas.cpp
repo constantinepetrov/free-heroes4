@@ -31,11 +31,6 @@ Canvas Canvas::translated(core::Point delta) const noexcept {
     return Canvas{target_, origin_ + delta, clip_};
 }
 
-void Canvas::blend(core::Point local, Color565 src, std::uint32_t weight) const noexcept {
-    const core::Point p = local + origin_;
-    if (clip_.contains(p))
-        target_->set(p, weight >= 16 ? src : lerp(target_->at(p), src, weight));
-}
 
 void Canvas::fill_rect(const core::Rect& local, Rgba color) const noexcept {
     const std::uint32_t weight = color.a * std::uint32_t{16} / 255;
@@ -143,11 +138,6 @@ void Canvas::draw_surface(const Surface565& source, core::Point at) const noexce
     }
 }
 
-void Canvas::set_pixel(core::Point local, Color565 color) const noexcept {
-    const core::Point at{local.x + origin_.x, local.y + origin_.y};
-    if (clip_.contains(at))
-        target_->set(at, color);
-}
 
 void Canvas::draw_text_line(const formats::Font& font, std::string_view text, core::Point at, const TextStyle& style) const noexcept {
     const Color565 body                  = Color565::from(style.body);

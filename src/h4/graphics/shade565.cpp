@@ -39,7 +39,7 @@ constexpr BlendMasks kMasks = make_masks();
 
 }
 
-Color565 shade(Color565 pixel, unsigned index) noexcept {
+constexpr Color565 reference_shade(Color565 pixel, unsigned index) noexcept {
     const std::uint32_t p = pixel.bits();
     const auto term = [p](std::size_t quarter, unsigned shift) {
         return (kMasks.quarter[quarter] >> shift) & (p >> shift);
@@ -85,15 +85,21 @@ Color565 shade(Color565 pixel, unsigned index) noexcept {
     return Color565{static_cast<std::uint16_t>((p & kMasks.keep_lsb) | low)};
 }
 
-int shade_index(int biased, int parity_a, int parity_b) noexcept {
-    int index = biased >> 11;
-    switch (biased >> 9 & 3) {
-    case 1: index += parity_a & parity_b; break;
-    case 2: index += (parity_a + parity_b) & 1; break;
-    case 3: index += parity_a | parity_b; break;
-    default: break;
+
+namespace {
+constexpr ShadeTables make_tables() {
+    ShadeTables t;
+    for(unsigned s=0;s<=32;++s) {
+        for(unsigned v=0;v<32;++v) {
+            t.red[s][v]=reference_shade(Color565{static_cast<std::uint16_t>(v<<11)},s).bits();
+            t.blue[s][v]=reference_shade(Color565{static_cast<std::uint16_t>(v)},s).bits();
+        }
+        for(unsigned v=0;v<64;++v)
+            t.green[s][v]=reference_shade(Color565{static_cast<std::uint16_t>(v<<5)},s).bits();
     }
-    return index;
+    return t;
 }
+}
+constinit const ShadeTables shade_tables=make_tables();
 
 }

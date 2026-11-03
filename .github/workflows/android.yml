@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -13,17 +14,10 @@ jobs:
       fail-fast: false
       matrix:
         variant: [Debug, Release]
-        renderer: [baseline, optimized]
     env:
       SDL3_SOURCE_DIR: ${{ github.workspace }}/.deps/SDL
     steps:
       - uses: actions/checkout@v4
-      - name: Select measured renderer
-        if: matrix.renderer == 'baseline'
-        run: |
-          git fetch --depth=1 origin 9645ea3d2affaf902bd33876f55f3b74995937c7
-          git checkout 9645ea3d2affaf902bd33876f55f3b74995937c7 -- .
-          git show "$GITHUB_SHA:android/app/src/androidTest/java/org/openh4/android/ImportSmokeTest.java" > android/app/src/androidTest/java/org/openh4/android/ImportSmokeTest.java
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -69,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: OpenH4-native-${{ matrix.renderer }}-${{ matrix.variant }}-${{ github.sha }}
+          name: OpenH4-native-optimized-${{ matrix.variant }}-${{ github.sha }}
           path: |
             android/app/build/outputs/apk/**/*.apk
             android/app/build/reports/lint-results-*.html
@@ -93,6 +87,12 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: OpenH4-native-*-${{ github.sha }}
+          path: android/perf-builds
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 41717003467
+          github-token: ${{ github.token }}
+          pattern: OpenH4-native-baseline-*
           path: android/perf-builds
       - name: Enable emulator KVM
         run: |

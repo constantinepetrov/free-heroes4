@@ -6,13 +6,16 @@ export ANDROID_SERIAL=emulator-5554
 test "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" = 1
 mkdir -p android/smoke-output
 lscpu > android/smoke-output/runner-cpu.txt
-adb shell wm size 2208x1768
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
 adb shell getprop > android/smoke-output/emulator-properties.txt
-for label in baseline-debug baseline-release optimized-debug optimized-release; do
-  renderer=${label%-*}
-  lower=${label##*-}
+for label in low-baseline-debug low-baseline-release low-optimized-debug low-optimized-release high-optimized-release; do
+  mode=${label%%-*}
+  rest=${label#*-}
+  renderer=${rest%-*}
+  lower=${rest##*-}
+  if [ "$mode" = low ]; then adb shell wm size 1280x1024; else adb shell wm size 2208x1768; fi
+  adb shell wm size > "android/smoke-output/$label-output-size.txt"
   variant=$(printf '%s' "$lower" | sed 's/^./\U&/')
   root=$(find android/perf-builds -maxdepth 1 -type d -name "OpenH4-native-$renderer-$variant-*")
   test -n "$root"

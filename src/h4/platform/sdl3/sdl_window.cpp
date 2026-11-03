@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <format>
 #include <memory>
 #include <optional>
@@ -209,20 +208,20 @@ public:
 
 private:
     void upload(const graphics::Surface565& frame) {
-        void* pixels=nullptr;int out_pitch=0;
-        if (!SDL_LockTexture(texture_.get(),nullptr,&pixels,&out_pitch)) {
-            SDL_LogError(SDL_LOG_CATEGORY_RENDER,"Frame texture lock failed: %s",SDL_GetError());return;
+        const int pitch = logical_.width * 2;
+        if constexpr (kTextureFormat == SDL_PIXELFORMAT_RGB565) {
+            if (!SDL_UpdateTexture(texture_.get(), nullptr, frame.bits().data(), pitch))
+                SDL_LogError(SDL_LOG_CATEGORY_RENDER,"Frame upload failed: %s",SDL_GetError());
+        } else {
+            void* pixels  = nullptr;
+            int out_pitch = 0;
+            if (!SDL_LockTexture(texture_.get(), nullptr, &pixels, &out_pitch))
+                return;
+            SDL_ConvertPixels(
+                logical_.width, logical_.height, SDL_PIXELFORMAT_RGB565, frame.bits().data(), pitch, kTextureFormat, pixels, out_pitch
+            );
+            SDL_UnlockTexture(texture_.get());
         }
-        if constexpr (kTextureFormat==SDL_PIXELFORMAT_RGB565) {
-            const auto pitch=static_cast<std::size_t>(logical_.width)*sizeof(std::uint16_t);
-            if (out_pitch>=static_cast<int>(pitch))
-                for(int y=0;y<logical_.height;++y)
-                    std::memcpy(static_cast<std::byte*>(pixels)+static_cast<std::size_t>(y)*static_cast<std::size_t>(out_pitch),frame.bits().data()+static_cast<std::size_t>(y)*static_cast<std::size_t>(logical_.width),pitch);
-            else SDL_LogError(SDL_LOG_CATEGORY_RENDER,"Invalid locked texture pitch");
-        } else if (!SDL_ConvertPixels(logical_.width,logical_.height,SDL_PIXELFORMAT_RGB565,frame.bits().data(),logical_.width*2,kTextureFormat,pixels,out_pitch)) {
-            SDL_LogError(SDL_LOG_CATEGORY_RENDER,"Frame texture conversion failed: %s",SDL_GetError());
-        }
-        SDL_UnlockTexture(texture_.get());
     }
 
     bool rebuild_texture() {

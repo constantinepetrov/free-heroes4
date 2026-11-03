@@ -43,7 +43,11 @@ public:
 
     void draw_surface(const Surface565& source, core::Point at) const noexcept;
 
-    void set_pixel(core::Point local, Color565 color) const noexcept;
+    void set_pixel(core::Point local, Color565 color) const noexcept {
+        const core::Point at{local.x + origin_.x, local.y + origin_.y};
+        if (clip_.contains(at))
+            target_->set(at, color);
+}
 
     void blend_pixel(core::Point local, Color565 color, std::uint32_t weight) const noexcept {
         blend(local, color, weight);
@@ -63,7 +67,11 @@ private:
     : target_{target}, origin_{origin}, clip_{clip} {
     }
 
-    void blend(core::Point local, Color565 src, std::uint32_t weight) const noexcept;
+    void blend(core::Point local, Color565 src, std::uint32_t weight) const noexcept {
+        const core::Point p = local + origin_;
+        if (clip_.contains(p))
+            target_->set(p, weight >= 16 ? src : lerp(target_->at(p), src, weight));
+}
 
     Surface565* target_;
     core::Point origin_{};

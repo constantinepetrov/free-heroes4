@@ -1,10 +1,11 @@
 #include "render_benchmark.hpp"
+#include "reference_shade.hpp"
+#include "h4/graphics/shade565.hpp"
 #include <algorithm>
 #include <array>
 #include <ctime>
 #include <format>
 #include <stdexcept>
-#include <sys/resource.h>
 #include "h4/app/application.hpp"
 #include "h4/assets/assets.hpp"
 #include "h4/core/performance.hpp"
@@ -81,6 +82,10 @@ public:
  void adopt(assets::Prefetched)const override{}
 };
 void raster_checks(const FixtureAssets& assets,const model::Map& map) {
+ for(unsigned level=0;level<=33;++level)for(unsigned bits=0;bits<65536;++bits) {
+  const auto pixel=graphics::Color565{static_cast<std::uint16_t>(bits)};
+  check(graphics::shade(pixel,level)==reference::shade(pixel,level),"Shading table differs from scalar formula");
+ }
  const core::Rect clip{{7,5},{73,61}};const core::Point delta{-11,9};const core::Point origin=clip.origin()+delta;
  for(const char* name:{"opaque","alpha","keyed"}) for(core::Point offset:std::array<core::Point,4>{{{0,0},{-35,-40},{40,30},{150,150}}}) {
   graphics::Surface565 actual{{96,80},graphics::Color565{0x6b4d}},expected=actual;
@@ -198,11 +203,12 @@ std::string render_benchmark(platform::Window& window){
   const auto cpu=std::clock();const auto wall=core::perf::Clock::now();std::vector<core::perf::Times> frames;
   for(int n=0;n<120;++n){check(application.step(std::chrono::milliseconds{16}),"Frame exited");frames.push_back(core::perf::current());}
   const double seconds=std::chrono::duration<double>(core::perf::Clock::now()-wall).count();const double cpu_s=static_cast<double>(std::clock()-cpu)/CLOCKS_PER_SEC;
-  struct rusage usage{};getrusage(RUSAGE_SELF,&usage);
+  const auto peak_rss=core::perf::peak_rss_kib();
   if(mode)result+=",";
   constexpr std::array<std::string_view,5> names{"main-menu","map-static","map-moving","window","battle"};
   auto stats=core::perf::summary(frames);
-  result+=std::format("{{\"scenario\":\"{}\",\"size\":\"1280x1024\",\"cpu_percent\":{:.2f},\"peak_rss_kib\":{},\"timing\":{}}}",names[static_cast<std::size_t>(mode)],seconds>0?100*cpu_s/seconds:0,usage.ru_maxrss,stats);
+  const auto physical=window.window_size();stats.pop_back();stats+=std::format(",\"window_width\":{},\"window_height\":{}}}",physical.width,physical.height);
+  result+=std::format("{{\"scenario\":\"{}\",\"size\":\"1280x1024\",\"cpu_percent\":{:.2f},\"peak_rss_kib\":{},\"timing\":{}}}",names[static_cast<std::size_t>(mode)],seconds>0?100*cpu_s/seconds:0,peak_rss,stats);
  }
  return result+"]";
 }

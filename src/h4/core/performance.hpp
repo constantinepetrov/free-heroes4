@@ -12,6 +12,7 @@ using Times = std::array<double,count>;
 using Clock = std::chrono::steady_clock;
 void enable(std::function<void(std::string_view)> sink = {});
 bool enabled() noexcept;
+std::int64_t peak_rss_kib() noexcept;
 void begin_frame();
 void end_frame();
 void add(Stage stage,double ms) noexcept;
