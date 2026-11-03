@@ -16,4 +16,4 @@ public:
  bool offers_web_sign_in()const noexcept override{return false;}
  void open_web_sign_in(std::string_view,std::string_view)override{}
 };
-int main(){try{MemoryWindow w;std::cout<<h4::tests::render_benchmark(w)<<'\n';if(w.frames!=625)throw std::runtime_error("Missing rendered frames");return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{MemoryWindow w;std::cout<<h4::tests::render_benchmark(w)<<'\n';if(w.frames!=930)throw std::runtime_error("Missing rendered frames");return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
