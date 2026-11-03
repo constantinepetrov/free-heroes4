@@ -90,7 +90,7 @@ rules::Battle battle_fixture(){
 }
 class FixtureView final:public screens::View {
 public:
- FixtureAssets assets;model::Map map=map_fixture();screens::MapWindow map_view{{{0,0},{960,1024}}};rules::Battle battle=battle_fixture();
+ FixtureAssets assets;model::Map map=map_fixture();screens::MapWindow map_view{{{0,0},{960,1024}},&assets.font};rules::Battle battle=battle_fixture();
  std::unique_ptr<screens::MainMenuView> menu=take(screens::MainMenuView::build(assets,{1280,1024},{}));
  screens::BattleView battle_view{{1280,1024},assets.font,battle,std::vector<const formats::Layer*>(14,assets.art.find("opaque"))};
  int mode=0,frame=0;

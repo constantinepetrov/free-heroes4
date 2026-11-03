@@ -112,6 +112,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y g++-14 ninja-build zlib1g-dev liblzma-dev
-      - run: cmake -S . -B build-tests -G Ninja -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DH4_BUILD_PLATFORM=OFF -DH4_WARNINGS_AS_ERRORS=OFF
+      - run: cmake -S . -B build-tests -G Ninja -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DH4_BUILD_PLATFORM=OFF -DH4_WARNINGS_AS_ERRORS=OFF -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
       - run: cmake --build build-tests --target h4-combat-tests h4-render-tests --parallel 2
       - run: ctest --test-dir build-tests --output-on-failure
