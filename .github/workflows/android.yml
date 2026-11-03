@@ -33,6 +33,7 @@ jobs:
       - name: Assemble APK and importer test
         run: gradle -p android --no-daemon --max-workers=2 assembleDebug assembleDebugAndroidTest lintDebug
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: OpenH4-native-debug-${{ github.sha }}
           path: |

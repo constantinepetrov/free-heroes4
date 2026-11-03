@@ -37,6 +37,7 @@ public final class LauncherActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        try { recoverImport(); } catch (IOException e) { Log.e("OpenH4", "Import recovery", e); }
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = (int)(24 * getResources().getDisplayMetrics().density);
@@ -87,7 +88,13 @@ public final class LauncherActivity extends Activity {
         } catch (IOException e) { Log.e("OpenH4", "Cannot write log", e); }
         runOnUiThread(() -> { if (!isFinishing()) status.setText(message); });
     }
+    private void recoverImport() throws IOException {
+        File previous = new File(getFilesDir(), "game-previous");
+        if (!game().exists() && previous.exists() && !previous.renameTo(game()))
+            throw new IOException("Не удалось восстановить предыдущий импорт");
+    }
     private void importTree(Uri tree) throws IOException {
+        recoverImport();
         File staging = new File(getFilesDir(), "import-staging");
         remove(staging); if (!staging.mkdirs()) throw new IOException("Не удалось создать временную папку");
         Set<String> names = new HashSet<>();
@@ -148,6 +155,8 @@ public final class LauncherActivity extends Activity {
         }
     }
     static String resourcePath(String path) {
+        for (String part : path.split("/", -1))
+            if (part.isEmpty() || part.equals(".") || part.equals("..") || part.startsWith("._") || part.contains("\\")) return null;
         String lower = path.toLowerCase(Locale.ROOT);
         if (lower.startsWith("data/") && lower.indexOf('/', 5) == -1 && ARCHIVES.contains(lower.substring(5))) return lower;
         if (lower.startsWith("maps/") && lower.endsWith(".h4c")) return "maps/" + path.substring(5);

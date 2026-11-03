@@ -36,3 +36,5 @@ License
 -------
 
 GNU General Public License, version 3. See LICENSE.
+
+Android fork: native ARM64 APK and resource import instructions are in docs/ANDROID.md. Original engine limitations still apply.

@@ -1,0 +1,7 @@
+OpenH4 Android corresponding source: https://github.com/constantinepetrov/free-heroes4/tree/codex/android-arm64-import
+Upstream: https://github.com/tallowmere/free-heroes4
+SDL3: https://github.com/libsdl-org/SDL/tree/release-3.4.14
+XZ/liblzma: https://github.com/tukaani-project/xz/tree/v5.8.4
+nlohmann/json: https://github.com/nlohmann/json/tree/v3.12.0
+Android platform zlib: https://android.googlesource.com/platform/external/zlib/
+No original Heroes IV game data is included.

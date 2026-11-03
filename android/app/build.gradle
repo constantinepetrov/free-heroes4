@@ -22,5 +22,5 @@ android {
     sourceSets { main { java.srcDirs += "${sdl}/android-project/app/src/main/java" } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes { debug { debuggable true } }
-    lint { abortOnError true }
+    lint { abortOnError true; lintConfig file('../lint.xml') }
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- SDL ships desktop/controller compatibility code; keep lint strict for our Android code. -->
+    <issue id="all"><ignore regexp=".*/org/libsdl/app/.*" /></issue>
+</lint>
