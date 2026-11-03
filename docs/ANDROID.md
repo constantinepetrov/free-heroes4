@@ -16,7 +16,7 @@ export SDL3_SOURCE_DIR=/your/external/disk/SDL
 gradle -p android --no-daemon --max-workers=2 assembleDebug assembleDebugAndroidTest lintDebug
 ```
 
-Файл установки: `android/app/build/outputs/apk/debug/app-debug.apk`. Debug-ключ Actions предназначен для тестов. Перед публичным выпуском нужен постоянный ключ подписи.
+Файл установки: `android/app/build/outputs/apk/debug/app-debug.apk`. Debug-ключ Actions предназначен для тестов. Разные запуски CI могут иметь разные подписи, поэтому Android отклонит обновление поверх старого APK. Для обновлений с сохранением данных и публичного выпуска нужен постоянный ключ подписи.
 
 ## Ресурсы и импорт
 
