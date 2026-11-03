@@ -47,7 +47,7 @@ public:
         const core::Point at{local.x + origin_.x, local.y + origin_.y};
         if (clip_.contains(at))
             target_->set(at, color);
-}
+    }
 
     void blend_pixel(core::Point local, Color565 color, std::uint32_t weight) const noexcept {
         blend(local, color, weight);
@@ -71,7 +71,7 @@ private:
         const core::Point p = local + origin_;
         if (clip_.contains(p))
             target_->set(p, weight >= 16 ? src : lerp(target_->at(p), src, weight));
-}
+    }
 
     Surface565* target_;
     core::Point origin_{};

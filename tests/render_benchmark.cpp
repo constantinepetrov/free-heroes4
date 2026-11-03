@@ -32,8 +32,8 @@ struct Bytes {
  void u32(unsigned n){u16(n&65535);u16(n>>16);}
  void text(std::string_view s){u16(static_cast<unsigned>(s.size()));for(char c:s)u8(static_cast<unsigned char>(c));}
 };
-formats::BitmapGroup layers(){
- Bytes b;b.u16(8);
+formats::BitmapGroup layers(bool map_art=false){
+ Bytes b;b.u16(map_art?14:8);
  const auto layer=[&](std::string_view name,int x,int y,int w,int h,int alpha){
   b.u16(4);b.u16(0);for(unsigned i=0;i<4;++i){b.u8(35+i*30);b.u8(75+i*40);b.u8(20+i*30);}
   b.text(name);b.u8(alpha==1?4:alpha==2?1:0);b.u32(static_cast<unsigned>(x));b.u32(static_cast<unsigned>(y));b.u32(static_cast<unsigned>(x+w));b.u32(static_cast<unsigned>(y+h));
@@ -43,6 +43,7 @@ formats::BitmapGroup layers(){
  };
  int y=170;for(auto n:{"New_Game_Released","Load_Game_Released","Options_Released","Quit_Released","Network_Released"}){layer(n,930,y,280,80,0);y+=160;}
  layer("opaque",0,0,64,80,0);layer("alpha",0,0,64,80,1);layer("keyed",0,0,64,80,2);
+ if(map_art)for(auto name:{"top","bottom","left","right","corner","background"})layer(name,0,0,17,19,0);
  return take(formats::BitmapGroup::parse(b.v));
 }
 formats::TerrainTexture texture(){
@@ -54,18 +55,20 @@ formats::TerrainTexture texture(){
  b.u32(256);for(unsigned i=0;i<256;++i){b.u8(i/3);b.u8(i);b.u8(i/2);}
  return take(formats::TerrainTexture::parse(b.v));
 }
-model::Map map_fixture(){
+model::Map map_fixture(bool raised=false){
  Bytes b;b.u16(20);b.u16(128);b.u8(1);b.u32(42);b.u8(1);b.u8(0);b.u8(1);b.u8(0);b.u8(1);b.text("Procedural performance fixture");b.u8(1);b.text("");b.u16(0);b.u8(0);b.u8(0);b.u8(0);
  const auto header=take(formats::ScenarioHeader::parse(b.v));
  for(int i=0;i<12;++i){b.u16(0);b.u8(0);b.u16(0);}b.u8(0);b.u8(0);for(int i=0;i<4;++i)b.u8(0);b.u32(0);
  for(auto span:formats::tile_spans(128)) for(int y=span.start;y<span.stop;++y){b.u8(1);b.u8(0);b.u8(0);b.u8(0);b.u8(0);b.u16(0);b.u8(0);b.u8(0);}
- for(std::size_t i=0;i<formats::lattice_cells(formats::vertex_spans(128));++i)b.u8(0);
+ for(std::size_t i=0;i<formats::lattice_cells(formats::vertex_spans(128));++i)b.u8(raised?(i*13)%32:0);
  return take(model::Map::parse(b.v,header,header.body_offset()));
 }
 class FixtureAssets final:public assets::Assets {
 public:
- formats::BitmapGroup art=layers();formats::TerrainTexture ground=texture();formats::Font font=formats::Font::builtin();graphics::Surface565 background{{1280,1024},graphics::Color565{0x1963}};
- const formats::BitmapGroup* group(std::string_view n)const override{return n.starts_with("menu.main.")?&art:nullptr;}
+ explicit FixtureAssets(bool map_art=false):map_art_{map_art},art{layers(map_art)}{}
+ bool map_art_;
+ formats::BitmapGroup art;formats::TerrainTexture ground=texture();formats::Font font=formats::Font::builtin();graphics::Surface565 background{{1280,1024},graphics::Color565{0x1963}};
+ const formats::BitmapGroup* group(std::string_view n)const override{return (n.starts_with("menu.main.") || (map_art_ && (n=="map_frame" || n=="shroud")))?&art:nullptr;}
  const formats::TerrainTexture* terrain(std::string_view)const override{return &ground;}
  const formats::Animation* animation(std::string_view)const override{return nullptr;}
  const formats::AdvObject* object(std::string_view)const override{return nullptr;}
@@ -81,7 +84,7 @@ public:
  core::Pending<assets::Prefetched> prefetch(std::span<const assets::AssetRequest>)const override{return {};}
  void adopt(assets::Prefetched)const override{}
 };
-void raster_checks(const FixtureAssets& assets,const model::Map& map) {
+void raster_checks(const FixtureAssets& assets) {
  for(unsigned level=0;level<=33;++level)for(unsigned bits=0;bits<65536;++bits) {
   const auto pixel=graphics::Color565{static_cast<std::uint16_t>(bits)};
   check(graphics::shade(pixel,level)==reference::shade(pixel,level),"Shading table differs from scalar formula");
@@ -111,12 +114,23 @@ void raster_checks(const FixtureAssets& assets,const model::Map& map) {
   for(int y=clip.top();y<clip.bottom();++y)for(int x=clip.left();x<clip.right();++x)if(local.translated(origin).contains({x,y}))expected.set({x,y},graphics::lerp(expected.at({x,y}),graphics::Color565::from(color),static_cast<unsigned>(alpha)*16/255));
   check(std::ranges::equal(actual.bits(),expected.bits()),"Clipped fill differs from scalar oracle");
  }
- scene::MapRenderer reference{assets,map,nullptr,false},cached{assets,map,nullptr,true};
- for(auto camera:std::array<core::Point,5>{{{1200,600},{1200,600},{-40,-100},{2300,1500},{1000,500}}}) {
-  graphics::Surface565 actual{{320,240}},expected=actual;
-  const auto viewport=core::Rect{{12,17},{290,210}};
-  cached.paint(graphics::Canvas(actual).child(viewport),camera,0);reference.paint(graphics::Canvas(expected).child(viewport),camera,0);
-  check(std::ranges::equal(actual.bits(),expected.bits()),"Ground cache changed rendered pixels after camera/clip change");
+ const FixtureAssets edge_assets{true};
+ for(bool raised:{false,true}) {
+  const auto terrain=map_fixture(raised);
+  scene::MapRenderer reference{edge_assets,terrain,nullptr,false},cached{edge_assets,terrain,nullptr,true};
+  const auto compare=[&](core::Point camera,core::Rect viewport) {
+   graphics::Surface565 actual{{320,240}},expected=actual;
+   cached.paint(graphics::Canvas(actual).child(viewport),camera,0);
+   reference.paint(graphics::Canvas(expected).child(viewport),camera,0);
+   check(std::ranges::equal(actual.bits(),expected.bits()),"Panning cache differs from uncached terrain/frame/edge pixels");
+  };
+  const core::Rect viewport{{12,17},{290,210}};
+  for(auto start:std::array<core::Point,5>{{{1200,600},{-40,-100},{2300,1500},{1000,500},{1200,-10}}}) {
+   for(int n=0;n<10;++n)compare(start+core::Point{n*7,n*9},viewport);
+   for(int n=9;n>=0;--n)compare(start+core::Point{-n*17,-n*21},viewport);
+  }
+  compare({1201,601},{{5,3},{300,225}});
+  compare({1201,601},viewport);
  }
  check(source.row(-1).empty() && source.row(67).empty(),"Invalid row accepted");
 }
@@ -137,7 +151,7 @@ public:
  int mode=0,frame=0;
  FixtureView(){map_view.show_map(assets,map,nullptr);map_view.set_camera({1200,600});}
  void handle(const platform::InputEvent& e)override{if(mode==0)menu->handle(e);else if(mode==4)battle_view.handle(e);}
- void advance(core::Instant)override{++frame;if(mode==2)map_view.set_camera({1200+frame%64,600});}
+ void advance(core::Instant)override{++frame;if(mode==2)map_view.set_camera({1200+frame%64,600});if(mode==5)map_view.set_camera({1200+frame,600+frame});}
  void paint(const graphics::Canvas& c)const override{
   if(mode==0){menu->paint(c);return;}
   if(mode==4){battle_view.paint(c);return;}
@@ -164,7 +178,7 @@ std::string render_benchmark(platform::Window& window){
  const auto quantiles=core::perf::summary(known);
  check(quantiles.find("\"median_ms\":50.000")!=std::string::npos && quantiles.find("\"p95_ms\":95.000")!=std::string::npos && quantiles.find("\"p99_ms\":99.000")!=std::string::npos && quantiles.find("\"ui_ms\":2.000")!=std::string::npos,"Frame statistics quantiles are incorrect");
  check(core::perf::summary({})=="{}","Empty frame statistics are incorrect");
- raster_checks(fixture->assets,fixture->map);
+ raster_checks(fixture->assets);
  // Exercise the real menu and battle input paths before timing rendering.
  bool menu_clicked=false;
  auto menu_wire=fixture->menu->action.connect([&](screens::MainMenuAction){menu_clicked=true;});
@@ -198,14 +212,14 @@ std::string render_benchmark(platform::Window& window){
  host.open(std::make_unique<Partial>());host.paint(graphics::Canvas{composite});check(background.paints==2,"Partial popup hid its background");
 
  app::Application application{window,cursor,std::move(controller)};std::string result="[";
- for(int mode=0;mode<5;++mode){fixture->mode=mode;fixture->frame=0;fixture->map_view.set_camera({1200,600});
+ for(int mode=0;mode<6;++mode){fixture->mode=mode;fixture->frame=0;fixture->map_view.set_camera({1200,600});
   for(int n=0;n<5;++n)check(application.step(std::chrono::milliseconds{16}),"Warmup exited");
   const auto cpu=std::clock();const auto wall=core::perf::Clock::now();std::vector<core::perf::Times> frames;
-  for(int n=0;n<120;++n){check(application.step(std::chrono::milliseconds{16}),"Frame exited");frames.push_back(core::perf::current());}
+  for(int n=0;n<(mode==5?300:120);++n){check(application.step(std::chrono::milliseconds{16}),"Frame exited");frames.push_back(core::perf::current());}
   const double seconds=std::chrono::duration<double>(core::perf::Clock::now()-wall).count();const double cpu_s=static_cast<double>(std::clock()-cpu)/CLOCKS_PER_SEC;
   const auto peak_rss=core::perf::peak_rss_kib();
   if(mode)result+=",";
-  constexpr std::array<std::string_view,5> names{"main-menu","map-static","map-moving","window","battle"};
+  constexpr std::array<std::string_view,6> names{"main-menu","map-static","map-moving","window","battle","map-long-pan"};
   auto stats=core::perf::summary(frames);
   const auto physical=window.window_size();stats.pop_back();stats+=std::format(",\"window_width\":{},\"window_height\":{}}}",physical.width,physical.height);
   result+=std::format("{{\"scenario\":\"{}\",\"size\":\"1280x1024\",\"cpu_percent\":{:.2f},\"peak_rss_kib\":{},\"timing\":{}}}",names[static_cast<std::size_t>(mode)],seconds>0?100*cpu_s/seconds:0,peak_rss,stats);

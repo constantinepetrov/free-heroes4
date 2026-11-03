@@ -9,7 +9,7 @@ android {
         applicationId 'org.openh4.android'
         minSdk 30
         targetSdk 36
-        versionCode 5
+        versionCode 6
         versionName '0.2.1-performance'
         testInstrumentationRunner 'org.openh4.android.ImportSmokeTest'
         ndk { abiFilters 'arm64-v8a', 'x86_64' }

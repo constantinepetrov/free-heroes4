@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -82,11 +83,15 @@ public:
 private:
     [[nodiscard]] core::Rect paint_ground_frame(const graphics::Canvas& canvas,core::Point camera,std::int32_t level) const;
     bool cache_ground_ = false;
-    mutable graphics::Surface565 ground_cache_;
-    mutable std::optional<core::Point> ground_camera_;
-    mutable core::Rect ground_clip_;
-    mutable core::Rect ground_scene_;
-    mutable std::int32_t ground_level_ = -1;
+    struct GroundCache {
+        graphics::Surface565 pixels;
+        std::optional<core::Point> camera;
+        core::Rect clip;
+        core::Rect scene;
+        std::int32_t level = -1;
+    };
+    // Screen-row dithering needs a separate image for each camera Y parity.
+    mutable std::array<GroundCache, 2> ground_cache_;
     struct Corners {
         graphics::CornerLifts lifts;
         graphics::CornerSlopes slopes;

@@ -124,7 +124,6 @@ core::Rect MapRenderer::paint_ground_frame(const graphics::Canvas& canvas,core::
         }
     }
 
-    paint_map_edges(inside, shroud_.texture(), grid, level, camera);
     return scene;
 }
 
@@ -134,16 +133,32 @@ void MapRenderer::paint(const graphics::Canvas& canvas,core::Point camera,std::i
         core::perf::Scope timing{core::perf::terrain};
         const auto clip=canvas.local_clip();
         if (cache_ground_ && !clip.empty()) {
-            if (ground_camera_!=camera || ground_clip_!=clip || ground_level_!=level) {
-                if (ground_cache_.size()!=clip.size()) ground_cache_=graphics::Surface565{clip.size()};
-                else ground_cache_.fill(graphics::Color565{});
-                const graphics::Canvas cached{ground_cache_};
-                ground_scene_=paint_ground_frame(cached.translated(core::Point{}-clip.origin()),camera,level);
-                ground_camera_=camera;ground_clip_=clip;ground_level_=level;
+            constexpr std::int32_t margin = 128;
+            auto& cache = ground_cache_[static_cast<unsigned>(camera.y) & 1U];
+            auto shift = cache.camera.value_or(camera) - camera;
+            if (!cache.camera || cache.clip != clip || cache.level != level ||
+                shift.x < -margin || shift.x > margin || shift.y < -margin || shift.y > margin) {
+                const core::Size size{clip.width() + 2 * margin, clip.height() + 2 * margin};
+                if (cache.pixels.size() != size)
+                    cache.pixels = graphics::Surface565{size};
+                else
+                    cache.pixels.fill(graphics::Color565{});
+                const graphics::Canvas cached{cache.pixels};
+                cache.scene = paint_ground_frame(
+                    cached.translated(core::Point{margin, margin} - clip.origin()), camera, level);
+                cache.camera = camera;
+                cache.clip = clip;
+                cache.level = level;
+                shift = {};
             }
-            canvas.draw_surface(ground_cache_,clip.origin());
-            scene=ground_scene_;
-        } else scene=paint_ground_frame(canvas,camera,level);
+            canvas.draw_surface(cache.pixels, clip.origin() - core::Point{margin, margin} + shift);
+            scene = cache.scene.translated(shift).intersected(clip);
+        } else {
+            scene = paint_ground_frame(canvas, camera, level);
+        }
+        // Edge texture wrapping uses screen coordinates, so it cannot move with the cached terrain.
+        if (!scene.empty())
+            paint_map_edges(canvas.clipped_to(scene), shroud_.texture(), map_->terrain(), level, camera);
     }
     if (scene.empty()) return;
     const auto inside=canvas.clipped_to(scene);
