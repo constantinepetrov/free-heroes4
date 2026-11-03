@@ -1,0 +1,26 @@
+plugins { id 'com.android.application' }
+def sdl = System.getenv('SDL3_SOURCE_DIR')
+if (!sdl) throw new GradleException('Set SDL3_SOURCE_DIR to SDL release-3.4.14 (see docs/ANDROID.md)')
+android {
+    namespace 'org.openh4.android'
+    compileSdk 36
+    ndkVersion '29.0.14206865'
+    defaultConfig {
+        applicationId 'org.openh4.android'
+        minSdk 30
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0-android-dev'
+        testInstrumentationRunner 'org.openh4.android.ImportSmokeTest'
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+        externalNativeBuild { cmake {
+            arguments '-DH4_WARNINGS_AS_ERRORS=OFF', "-DFETCHCONTENT_SOURCE_DIR_SDL3=${sdl}", '-DANDROID_STL=c++_shared'
+            targets 'openh4', 'SDL3-shared'
+        } }
+    }
+    externalNativeBuild { cmake { path '../../CMakeLists.txt'; version '3.31.6' } }
+    sourceSets { main { java.srcDirs += "${sdl}/android-project/app/src/main/java" } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildTypes { debug { debuggable true } }
+    lint { abortOnError true }
+}

@@ -65,6 +65,7 @@ PointerButton to_button(Uint8 button) noexcept {
 
 Key to_key(SDL_Keycode key) noexcept {
     switch (key) {
+    case SDLK_AC_BACK:
     case SDLK_ESCAPE: return Key::escape;
     case SDLK_RETURN: return Key::enter;
     case SDLK_SPACE: return Key::space;
@@ -72,7 +73,7 @@ Key to_key(SDL_Keycode key) noexcept {
     }
 }
 
-#if defined(SDL_PLATFORM_IOS)
+#if defined(SDL_PLATFORM_IOS) || defined(SDL_PLATFORM_ANDROID)
 constexpr SDL_WindowFlags kWindowFlags = SDL_WINDOW_FULLSCREEN;
 #else
 constexpr SDL_WindowFlags kWindowFlags = SDL_WINDOW_RESIZABLE;

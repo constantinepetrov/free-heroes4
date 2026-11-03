@@ -1,4 +1,7 @@
 #include <SDL3/SDL_main.h>
+#ifdef __ANDROID__
+#include <SDL3/SDL.h>
+#endif
 
 #include <cstdlib>
 #include <filesystem>
@@ -30,6 +33,11 @@ namespace {
 
 int report(std::string_view stage, const h4::core::Error& error) {
     std::println(stderr, "openh4: {}: {}", stage, error.message());
+#ifdef __ANDROID__
+    const std::string message = std::string{stage} + ": " + error.message();
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenH4", message.c_str(), nullptr);
+#endif
     return EXIT_FAILURE;
 }
 

@@ -2,7 +2,7 @@ include(FetchContent)
 
 find_package(Threads REQUIRED)
 
-if(IOS)
+if(IOS OR ANDROID)
   add_library(ZLIB::ZLIB INTERFACE IMPORTED)
   set_target_properties(ZLIB::ZLIB PROPERTIES INTERFACE_LINK_LIBRARIES z)
 
@@ -36,9 +36,14 @@ FetchContent_Declare(nlohmann_json
 FetchContent_MakeAvailable(nlohmann_json)
 
 if(H4_BUILD_PLATFORM)
-  if(IOS)
-    set(SDL_SHARED        OFF CACHE BOOL "" FORCE)
-    set(SDL_STATIC        ON  CACHE BOOL "" FORCE)
+  if(IOS OR ANDROID)
+    if(ANDROID)
+      set(SDL_SHARED ON CACHE BOOL "" FORCE)
+      set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+    else()
+      set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+      set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    endif()
     set(SDL_TEST_LIBRARY  OFF CACHE BOOL "" FORCE)
     set(SDL_TESTS         OFF CACHE BOOL "" FORCE)
     set(SDL_EXAMPLES      OFF CACHE BOOL "" FORCE)

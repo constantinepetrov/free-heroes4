@@ -42,7 +42,7 @@ add_subdirectory(src/h4/screens)
 add_subdirectory(src/h4/platform)
 add_subdirectory(src/h4/app)
 
-if(NOT IOS)
+if(NOT IOS AND NOT ANDROID)
   add_subdirectory(apps/h4-tool)
 endif()
 if(H4_BUILD_PLATFORM)

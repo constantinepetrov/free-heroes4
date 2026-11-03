@@ -1,6 +1,11 @@
-h4_executable(openh4
-  SOURCES main.cpp first_boot.cpp first_boot.hpp app_icon.hpp
-  LINK h4::app h4::assets h4::cursor h4::io h4::model h4::net h4::platform_sdl3 h4::screens
+if(ANDROID)
+  add_library(openh4 SHARED main.cpp first_boot.cpp android_import.cpp)
+  set_target_properties(openh4 PROPERTIES OUTPUT_NAME main)
+  target_include_directories(openh4 PRIVATE ${PROJECT_SOURCE_DIR}/src)
+else()
+  add_executable(openh4 main.cpp first_boot.cpp first_boot.hpp app_icon.hpp)
+endif()
+target_link_libraries(openh4 PRIVATE h4::policy h4::app h4::assets h4::cursor h4::io h4::model h4::net h4::platform_sdl3 h4::screens
        SDL3::SDL3)
 if(APPLE)
   target_link_libraries(openh4 PRIVATE h4::net_apple)
