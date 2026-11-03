@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# This script is restricted to the disposable GitHub Actions emulator.
+test "${GITHUB_ACTIONS:-false}" = true
+export ANDROID_SERIAL=emulator-5554
+test "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" = 1
 mkdir -p android/smoke-output
+lscpu > android/smoke-output/runner-cpu.txt
 adb shell wm size 2208x1768
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1

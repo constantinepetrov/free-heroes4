@@ -154,6 +154,11 @@ public:
 }
 std::string render_benchmark(platform::Window& window){
  core::perf::enable();NullCursor cursor;auto controller=std::make_unique<FixtureController>();auto* fixture=&controller->fixture;
+ std::vector<core::perf::Times> known(100);
+ for(std::size_t i=0;i<known.size();++i){known[i][core::perf::total]=static_cast<double>(i+1);known[i][core::perf::paint]=5;known[i][core::perf::map]=3;}
+ const auto quantiles=core::perf::summary(known);
+ check(quantiles.find("\"median_ms\":50.000")!=std::string::npos && quantiles.find("\"p95_ms\":95.000")!=std::string::npos && quantiles.find("\"p99_ms\":99.000")!=std::string::npos && quantiles.find("\"ui_ms\":2.000")!=std::string::npos,"Frame statistics quantiles are incorrect");
+ check(core::perf::summary({})=="{}","Empty frame statistics are incorrect");
  raster_checks(fixture->assets,fixture->map);
  // Exercise the real menu and battle input paths before timing rendering.
  bool menu_clicked=false;

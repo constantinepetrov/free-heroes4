@@ -22,6 +22,14 @@ rules::GameState world(bool friendly=false,int enemy_x=5) {
 void battle_checks() {
     using namespace rules;
     {
+        auto state=world();
+        auto moved=state.apply(commands::MoveArmy{PlayerId{0},1,{4,5,0,false},100});CHECK(moved);
+        CHECK(moved->army(1)->at==MapPoint(4,5,0,false));CHECK(moved->army(1)->left==2300);CHECK(state.army(1)->left==2400);
+        CHECK(!state.apply(commands::MoveArmy{PlayerId{1},1,{4,5,0,false},100}));
+        CHECK(!state.apply(commands::MoveArmy{PlayerId{0},1,{4,8,0,false},100}));
+        CHECK(!state.apply(commands::MoveArmy{PlayerId{0},1,{4,5,0,false},2500}));
+    }
+    {
         auto a=unit(0,0,1,1),d=unit(1,0,1,1);
         CHECK(!Battle::start({a,d}));d.at={2,1};a.max_hp=0;CHECK(!Battle::start({a,d}));
         a=unit(0,0,1,1);a.hp=101;CHECK(!Battle::start({a,d}));
@@ -64,6 +72,8 @@ void battle_checks() {
         auto state=world();auto result=state.resolve_battle(PlayerId{0},1,2,b,100);CHECK(result);
         CHECK(result->army(1)!=nullptr);CHECK(result->army(1)->left==2300);CHECK(result->army(2)==nullptr);
         CHECK(result->heroes().size()==1);CHECK(result->heroes()[0].experience==14);
+        auto after=result->apply(commands::MoveArmy{PlayerId{0},1,{4,5,0,false},100});CHECK(after);
+        CHECK(after->army(1)->left==2200);CHECK(after->heroes()[0].experience==14);
         CHECK(!result->resolve_battle(PlayerId{0},1,2,b,100));
         CHECK(!state.resolve_battle(PlayerId{1},1,2,b,100));CHECK(!state.resolve_battle(PlayerId{0},1,2,b,-1));
         CHECK(!world(true).resolve_battle(PlayerId{0},1,2,b,100));CHECK(!world(false,20).resolve_battle(PlayerId{0},1,2,b,100));

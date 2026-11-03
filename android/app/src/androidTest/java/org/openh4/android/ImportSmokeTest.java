@@ -28,7 +28,10 @@ public final class ImportSmokeTest extends Instrumentation {
                 Files.deleteIfExists(report.toPath());
                 android.content.Intent intent = new android.content.Intent(getTargetContext(), GameActivity.class)
                     .putExtra("renderBenchmark", true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivitySync(intent);
+                // Instrumentation can synchronously launch only its own process.
+                startActivitySync(new android.content.Intent(getTargetContext(), LauncherActivity.class)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+                getTargetContext().startActivity(intent);
                 long deadline = android.os.SystemClock.uptimeMillis() + 480000;
                 while (!report.isFile() && android.os.SystemClock.uptimeMillis() < deadline) Thread.sleep(200);
                 if (!report.isFile()) throw new AssertionError("Renderer benchmark timed out");

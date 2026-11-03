@@ -75,6 +75,7 @@ jobs:
             android/app/build/reports/lint-results-*.html
             android/app/build/signing.txt
             android/app/build/compiler-flags.json
+            android/app/build/outputs/native-debug-symbols/release/*.zip
   smoke:
     needs: build
     runs-on: ubuntu-24.04
