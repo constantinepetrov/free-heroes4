@@ -19,15 +19,6 @@ Surface565 Surface565::from_raw_bitmap(const formats::RawBitmap& bitmap) {
     return out;
 }
 
-Color565 Surface565::at(core::Point p) const noexcept {
-    return bounds().contains(p) ? Color565{bits_[index(p)]} : Color565{};
-}
-
-void Surface565::set(core::Point p, Color565 c) noexcept {
-    if (bounds().contains(p))
-        bits_[index(p)] = c.bits();
-}
-
 void Surface565::fill(Color565 c) noexcept {
     std::ranges::fill(bits_, c.bits());
 }

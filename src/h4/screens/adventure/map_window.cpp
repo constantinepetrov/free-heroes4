@@ -22,7 +22,8 @@ MapWindow::MapWindow(core::Rect viewport, const formats::Font* floating_font)
 }
 
 void MapWindow::show_map(const assets::Assets& assets, const model::Map& map, const model::Shroud* seen) {
-    renderer_.emplace(assets, map, seen);
+    // The widget has an opaque black base. Terrain is immutable; fog, armies and paths stay dynamic.
+    renderer_.emplace(assets, map, seen, true);
 }
 
 void MapWindow::set_camera(core::Point camera) noexcept {

@@ -34,7 +34,7 @@ Canvas Canvas::translated(core::Point delta) const noexcept {
 void Canvas::blend(core::Point local, Color565 src, std::uint32_t weight) const noexcept {
     const core::Point p = local + origin_;
     if (clip_.contains(p))
-        target_->set(p, lerp(target_->at(p), src, weight));
+        target_->set(p, weight >= 16 ? src : lerp(target_->at(p), src, weight));
 }
 
 void Canvas::fill_rect(const core::Rect& local, Rgba color) const noexcept {
@@ -43,9 +43,11 @@ void Canvas::fill_rect(const core::Rect& local, Rgba color) const noexcept {
         return;
     const Color565 src = Color565::from(color);
     const core::Rect r = local.translated(origin_).intersected(clip_);
-    for (std::int32_t y = r.top(); y < r.bottom(); ++y)
-        for (std::int32_t x = r.left(); x < r.right(); ++x)
-            target_->set({x, y}, lerp(target_->at({x, y}), src, weight));
+    for (std::int32_t y = r.top(); y < r.bottom(); ++y) {
+        auto row = target_->row(y).subspan(static_cast<std::size_t>(r.left()),static_cast<std::size_t>(r.width()));
+        if (weight >= 16) std::ranges::fill(row,src.bits());
+        else for (auto& pixel : row) pixel=lerp(Color565{pixel},src,weight).bits();
+    }
 }
 
 void Canvas::stroke_rect(const core::Rect& local, Rgba color) const noexcept {
@@ -68,20 +70,20 @@ void Canvas::draw_layer(const formats::Layer& layer, core::Point offset) const n
 
     const auto pixels = layer.pixels();
     const auto rows   = layer.rows();
-    for (std::size_t y = 0; y < rows.size(); ++y) {
-        const std::int32_t py = placed.top() + static_cast<std::int32_t>(y);
-        if (py < clip_.top() || py >= clip_.bottom())
-            continue;
-        const formats::RowSpan& run = rows[y];
-        for (std::size_t i = 0; i < run.length(); ++i) {
-            const std::size_t index  = run.offset + i;
-            const std::uint8_t cover = layer.coverage(index);
-            if (cover == 0)
-                continue;
-            const core::Point p{placed.left() + run.x0 + static_cast<std::int32_t>(i), py};
-            if (!clip_.contains(p))
-                continue;
-            target_->set(p, lerp(target_->at(p), palette[pixels[index]], coverage_weight(cover)));
+    const std::int32_t first_y=std::max(0,clip_.top()-placed.top());
+    const std::int32_t last_y=std::min(static_cast<std::int32_t>(rows.size()),clip_.bottom()-placed.top());
+    for (std::int32_t y=first_y;y<last_y;++y) {
+        const auto& run=rows[static_cast<std::size_t>(y)];
+        const int first=std::max(static_cast<int>(run.x0),clip_.left()-placed.left());
+        const int last=std::min(static_cast<int>(run.x1),clip_.right()-placed.left());
+        if(first>=last) continue;
+        auto dest=target_->row(placed.top()+y).subspan(static_cast<std::size_t>(placed.left()+first),static_cast<std::size_t>(last-first));
+        std::size_t index=run.offset+static_cast<std::size_t>(first-run.x0);
+        for(auto& pixel:dest) {
+            const auto cover=layer.coverage(index);
+            if(cover>=15) pixel=palette[pixels[index]].bits();
+            else if(cover) pixel=lerp(Color565{pixel},palette[pixels[index]],coverage_weight(cover)).bits();
+            ++index;
         }
     }
 }
@@ -118,7 +120,7 @@ void Canvas::draw_layer_scaled(const formats::Layer& layer, core::Point offset, 
             const std::uint8_t cover = layer.coverage(index);
             if (cover == 0)
                 continue;
-            target_->set(p, lerp(target_->at(p), palette[pixels[index]], coverage_weight(cover)));
+            target_->set(p, cover>=15 ? palette[pixels[index]] : lerp(target_->at(p), palette[pixels[index]], coverage_weight(cover)));
         }
     }
 }
@@ -126,9 +128,19 @@ void Canvas::draw_layer_scaled(const formats::Layer& layer, core::Point offset, 
 void Canvas::draw_surface(const Surface565& source, core::Point at) const noexcept {
     const core::Point shift = at + origin_;
     const core::Rect placed = source.bounds().translated(shift).intersected(clip_);
-    for (std::int32_t y = placed.top(); y < placed.bottom(); ++y)
-        for (std::int32_t x = placed.left(); x < placed.right(); ++x)
-            target_->set({x, y}, source.at(core::Point{x, y} - shift));
+    if (placed.empty()) return;
+    if (&source == target_) {
+        // Preserve the existing overlap semantics for callers that draw a surface onto itself.
+        for (std::int32_t y=placed.top();y<placed.bottom();++y)
+            for (std::int32_t x=placed.left();x<placed.right();++x)
+                target_->set({x,y},source.at(core::Point{x,y}-shift));
+        return;
+    }
+    for (std::int32_t y=placed.top();y<placed.bottom();++y) {
+        const auto src=source.row(y-shift.y).subspan(static_cast<std::size_t>(placed.left()-shift.x),static_cast<std::size_t>(placed.width()));
+        auto dst=target_->row(y).subspan(static_cast<std::size_t>(placed.left()),src.size());
+        std::ranges::copy(src,dst.begin());
+    }
 }
 
 void Canvas::set_pixel(core::Point local, Color565 color) const noexcept {

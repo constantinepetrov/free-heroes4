@@ -35,8 +35,20 @@ public:
         return bits_;
     }
 
-    [[nodiscard]] Color565 at(core::Point p) const noexcept;
-    void set(core::Point p, Color565 c) noexcept;
+    [[nodiscard]] Color565 at(core::Point p) const noexcept {
+        return bounds().contains(p) ? Color565{bits_[index(p)]} : Color565{};
+    }
+    void set(core::Point p, Color565 c) noexcept {
+        if (bounds().contains(p)) bits_[index(p)] = c.bits();
+    }
+    [[nodiscard]] std::span<std::uint16_t> row(std::int32_t y) noexcept {
+        if (y < 0 || y >= size_.height) return {};
+        return std::span{bits_}.subspan(static_cast<std::size_t>(y)*static_cast<std::size_t>(size_.width),static_cast<std::size_t>(size_.width));
+    }
+    [[nodiscard]] std::span<const std::uint16_t> row(std::int32_t y) const noexcept {
+        if (y < 0 || y >= size_.height) return {};
+        return std::span{bits_}.subspan(static_cast<std::size_t>(y)*static_cast<std::size_t>(size_.width),static_cast<std::size_t>(size_.width));
+    }
     void fill(Color565 c) noexcept;
 
     [[nodiscard]] std::vector<std::uint8_t> to_rgba() const;

@@ -4,18 +4,24 @@ mkdir -p android/smoke-output
 adb shell wm size 2208x1768
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
-for variant in Debug Release; do
-  root=$(find android/perf-builds -maxdepth 1 -type d -name "OpenH4-native-$variant-*")
+adb shell getprop > android/smoke-output/emulator-properties.txt
+for label in baseline-debug baseline-release debug release; do
+  case "$label" in
+    baseline-debug) folder=android/perf-baseline; variant=Debug; lower=debug ;;
+    baseline-release) folder=android/perf-baseline; variant=Release; lower=release ;;
+    debug) folder=android/perf-builds; variant=Debug; lower=debug ;;
+    release) folder=android/perf-builds; variant=Release; lower=release ;;
+  esac
+  root=$(find "$folder" -maxdepth 1 -type d -name "OpenH4-native-$variant-*")
   test -n "$root"
-  lower=$(printf '%s' "$variant" | tr '[:upper:]' '[:lower:]')
   adb install -r "$root/outputs/apk/$lower/app-$lower.apk"
   adb install -r "$root/outputs/apk/androidTest/$lower/app-$lower-androidTest.apk"
   adb logcat -c
-  timeout 600s adb shell am instrument -w -e performance true org.openh4.android.test/org.openh4.android.ImportSmokeTest | tee "android/smoke-output/$lower-test.txt"
-  grep -q 'PASS: renderer benchmark' "android/smoke-output/$lower-test.txt"
-  adb logcat -d > "android/smoke-output/$lower-logcat.txt"
-  ! grep -q 'FATAL EXCEPTION' "android/smoke-output/$lower-logcat.txt"
-  adb shell dumpsys meminfo org.openh4.android > "android/smoke-output/$lower-memory.txt"
+  timeout 600s adb shell am instrument -w -e performance true org.openh4.android.test/org.openh4.android.ImportSmokeTest | tee "android/smoke-output/$label-test.txt"
+  grep -q 'PASS: renderer benchmark' "android/smoke-output/$label-test.txt"
+  adb logcat -d > "android/smoke-output/$label-logcat.txt"
+  ! grep -q 'FATAL EXCEPTION' "android/smoke-output/$label-logcat.txt"
+  adb shell dumpsys meminfo org.openh4.android > "android/smoke-output/$label-memory.txt"
   adb shell am force-stop org.openh4.android
  done
 python3 android/performance_report.py android/smoke-output

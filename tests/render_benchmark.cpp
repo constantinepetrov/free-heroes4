@@ -31,16 +31,16 @@ struct Bytes {
  void text(std::string_view s){u16(static_cast<unsigned>(s.size()));for(char c:s)u8(static_cast<unsigned char>(c));}
 };
 formats::BitmapGroup layers(){
- Bytes b;b.u16(7);
+ Bytes b;b.u16(8);
  const auto layer=[&](std::string_view name,int x,int y,int w,int h,int alpha){
   b.u16(4);b.u16(0);for(unsigned i=0;i<4;++i){b.u8(35+i*30);b.u8(75+i*40);b.u8(20+i*30);}
-  b.text(name);b.u8(alpha?4:0);b.u32(static_cast<unsigned>(x));b.u32(static_cast<unsigned>(y));b.u32(static_cast<unsigned>(x+w));b.u32(static_cast<unsigned>(y+h));
+  b.text(name);b.u8(alpha==1?4:alpha==2?1:0);b.u32(static_cast<unsigned>(x));b.u32(static_cast<unsigned>(y));b.u32(static_cast<unsigned>(x+w));b.u32(static_cast<unsigned>(y+h));
   for(int j=0;j<h;++j){b.u16(0);b.u16(static_cast<unsigned>(w));b.u32(static_cast<unsigned>(j*w));}
   for(int j=0;j<w*h;++j)b.u8(static_cast<unsigned>(j%4));
-  if(alpha)for(int j=0;j<(w*h+1)/2;++j)b.u8(static_cast<unsigned>((j%16)*17));
+  if(alpha==1)for(int j=0;j<(w*h+1)/2;++j)b.u8(static_cast<unsigned>((j%16)*17));
  };
  int y=170;for(auto n:{"New_Game_Released","Load_Game_Released","Options_Released","Quit_Released","Network_Released"}){layer(n,930,y,280,80,0);y+=160;}
- layer("opaque",0,0,64,80,0);layer("alpha",0,0,64,80,1);
+ layer("opaque",0,0,64,80,0);layer("alpha",0,0,64,80,1);layer("keyed",0,0,64,80,2);
  return take(formats::BitmapGroup::parse(b.v));
 }
 formats::TerrainTexture texture(){
@@ -79,6 +79,41 @@ public:
  core::Pending<assets::Prefetched> prefetch(std::span<const assets::AssetRequest>)const override{return {};}
  void adopt(assets::Prefetched)const override{}
 };
+void raster_checks(const FixtureAssets& assets,const model::Map& map) {
+ const core::Rect clip{{7,5},{73,61}};const core::Point delta{-11,9};const core::Point origin=clip.origin()+delta;
+ for(const char* name:{"opaque","alpha","keyed"}) for(core::Point offset:std::array<core::Point,4>{{{0,0},{-35,-40},{40,30},{150,150}}}) {
+  graphics::Surface565 actual{{96,80},graphics::Color565{0x6b4d}},expected=actual;
+  const auto& layer=*assets.art.find(name);graphics::Canvas(actual).child(clip).translated(delta).draw_layer(layer,offset);
+  for(std::size_t y=0;y<layer.rows().size();++y){const auto& row=layer.rows()[y];for(std::size_t i=0;i<row.length();++i){
+   const core::Point at=origin+offset+layer.bounds().origin()+core::Point{row.x0+static_cast<int>(i),static_cast<int>(y)};
+   if(!clip.contains(at))continue;const auto index=row.offset+i;const auto cover=layer.coverage(index);if(!cover)continue;
+   const auto rgb=layer.palette()[layer.pixels()[index]];const auto color=graphics::Color565::from_rgb(rgb.r,rgb.g,rgb.b);
+   expected.set(at,graphics::lerp(expected.at(at),color,graphics::coverage_weight(cover)));
+  }}
+  check(std::ranges::equal(actual.bits(),expected.bits()),"Clipped opaque/keyed/alpha layer differs from scalar oracle");
+ }
+ graphics::Surface565 source{{83,67}};for(int y=0;y<67;++y)for(int x=0;x<83;++x)source.set({x,y},graphics::Color565{static_cast<std::uint16_t>(x+123*y)});
+ for(auto offset:std::array<core::Point,3>{{{-13,4},{50,-12},{110,100}}}) {
+  graphics::Surface565 actual{{96,80},graphics::Color565{0x1234}},expected=actual;graphics::Canvas(actual).child(clip).translated(delta).draw_surface(source,offset);
+  for(int y=0;y<67;++y)for(int x=0;x<83;++x){const auto at=origin+offset+core::Point{x,y};if(clip.contains(at))expected.set(at,source.at({x,y}));}
+  check(std::ranges::equal(actual.bits(),expected.bits()),"Clipped surface copy differs from scalar oracle");
+ }
+ for(auto alpha:{0,64,128,254,255}) {
+  graphics::Surface565 actual{{96,80},graphics::Color565{0x1234}},expected=actual;
+  const graphics::Rgba color{231,101,39,static_cast<std::uint8_t>(alpha)};const core::Rect local{{-20,-30},{93,100}};
+  graphics::Canvas(actual).child(clip).translated(delta).fill_rect(local,color);
+  for(int y=clip.top();y<clip.bottom();++y)for(int x=clip.left();x<clip.right();++x)if(local.translated(origin).contains({x,y}))expected.set({x,y},graphics::lerp(expected.at({x,y}),graphics::Color565::from(color),static_cast<unsigned>(alpha)*16/255));
+  check(std::ranges::equal(actual.bits(),expected.bits()),"Clipped fill differs from scalar oracle");
+ }
+ scene::MapRenderer reference{assets,map,nullptr,false},cached{assets,map,nullptr,true};
+ for(auto camera:std::array<core::Point,5>{{{1200,600},{1200,600},{-40,-100},{2300,1500},{1000,500}}}) {
+  graphics::Surface565 actual{{320,240}},expected=actual;
+  const auto viewport=core::Rect{{12,17},{290,210}};
+  cached.paint(graphics::Canvas(actual).child(viewport),camera,0);reference.paint(graphics::Canvas(expected).child(viewport),camera,0);
+  check(std::ranges::equal(actual.bits(),expected.bits()),"Ground cache changed rendered pixels after camera/clip change");
+ }
+ check(source.row(-1).empty() && source.row(67).empty(),"Invalid row accepted");
+}
 class NullCursor final:public cursor::CursorSource {
  const platform::CursorImage* image(const cursor::CursorState&)override{return nullptr;}
  void advance(core::Instant)override{}
@@ -118,6 +153,20 @@ public:
 }
 std::string render_benchmark(platform::Window& window){
  core::perf::enable();NullCursor cursor;auto controller=std::make_unique<FixtureController>();auto* fixture=&controller->fixture;
+ raster_checks(fixture->assets,fixture->map);
+ // Exercise the real menu and battle input paths before timing rendering.
+ bool menu_clicked=false;
+ auto menu_wire=fixture->menu->action.connect([&](screens::MainMenuAction){menu_clicked=true;});
+ const auto menu_at=fixture->menu->action_rect(screens::MainMenuAction::new_game).centre();
+ fixture->menu->handle(platform::events::PointerMoved{menu_at});
+ fixture->menu->handle(platform::events::PointerPressed{menu_at,platform::PointerButton::primary,false});
+ fixture->menu->handle(platform::events::PointerReleased{menu_at,platform::PointerButton::primary});
+ check(menu_clicked,"Menu tap did not activate action");
+ bool battle_moved=false;
+ auto battle_wire=fixture->battle_view.action.connect([&](rules::BattleAction a){check(fixture->battle.apply(a).has_value(),"Battle action rejected");battle_moved=true;fixture->battle_view.refresh();});
+ const auto tap=[&](core::Rect box){auto at=box.centre();fixture->battle_view.handle(platform::events::PointerPressed{at,platform::PointerButton::primary,false});fixture->battle_view.handle(platform::events::PointerReleased{at,platform::PointerButton::primary});};
+ tap(fixture->battle_view.cell_rect({2,1}));check(!battle_moved,"Battle move skipped confirmation");tap(fixture->battle_view.confirm_rect());
+ check(battle_moved && fixture->battle.active().at==core::Point{2,1},"Battle tap did not move active unit");fixture->battle=battle_fixture();fixture->battle_view.refresh();
  app::Application application{window,cursor,std::move(controller)};std::string result="[";
  for(int mode=0;mode<5;++mode){fixture->mode=mode;fixture->frame=0;fixture->map_view.set_camera({1200,600});
   for(int n=0;n<5;++n)check(application.step(std::chrono::milliseconds{16}),"Warmup exited");

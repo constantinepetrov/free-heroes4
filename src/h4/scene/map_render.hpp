@@ -35,7 +35,7 @@ inline constexpr std::int32_t kCameraMargin = 50;
 
 class MapRenderer {
 public:
-    MapRenderer(const assets::Assets& assets, const model::Map& map, const model::Shroud* seen = nullptr);
+    MapRenderer(const assets::Assets& assets, const model::Map& map, const model::Shroud* seen = nullptr, bool cache_ground = false);
 
     void paint(const graphics::Canvas& canvas, core::Point camera, std::int32_t level, std::uint32_t now = 0) const;
 
@@ -80,6 +80,13 @@ public:
     }
 
 private:
+    [[nodiscard]] core::Rect paint_ground_frame(const graphics::Canvas& canvas,core::Point camera,std::int32_t level) const;
+    bool cache_ground_ = false;
+    mutable graphics::Surface565 ground_cache_;
+    mutable std::optional<core::Point> ground_camera_;
+    mutable core::Rect ground_clip_;
+    mutable core::Rect ground_scene_;
+    mutable std::int32_t ground_level_ = -1;
     struct Corners {
         graphics::CornerLifts lifts;
         graphics::CornerSlopes slopes;

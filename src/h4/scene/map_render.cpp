@@ -10,8 +10,8 @@
 
 namespace h4::scene {
 
-MapRenderer::MapRenderer(const assets::Assets& assets, const model::Map& map, const model::Shroud* seen)
-: map_{&map}, transitions_{assets.transitions()}, mosaic_{model::TerrainMosaic::build(map.terrain(), map.terrain_seed())},
+MapRenderer::MapRenderer(const assets::Assets& assets, const model::Map& map, const model::Shroud* seen, bool cache_ground)
+: cache_ground_{cache_ground}, map_{&map}, transitions_{assets.transitions()}, mosaic_{model::TerrainMosaic::build(map.terrain(), map.terrain_seed())},
   art_{assets}, box_{map_box(map.terrain())}, frame_{assets}, objects_{assets, map}, shroud_{assets, map, seen} {
     const formats::ScenarioGrid& grid = map.terrain();
     slopes_.assign(grid.elevations().size(), graphics::kFlatSlope);
@@ -86,19 +86,18 @@ core::Point MapRenderer::centre_of(const model::MapActor& actor) const noexcept 
     return pin(actor.position.x, actor.position.y);
 }
 
-void MapRenderer::paint(const graphics::Canvas& canvas, core::Point camera, std::int32_t level, std::uint32_t now) const {
+core::Rect MapRenderer::paint_ground_frame(const graphics::Canvas& canvas,core::Point camera,std::int32_t level) const {
     const core::Rect box = core::Rect::from_edges(
         -camera.x, -kRaiseAllowance - camera.y, box_.width() - camera.x, box_.height() - camera.y
     );
     const core::Rect scene = frame_.paint(canvas, box);
     if (scene.empty())
-        return;
+        return scene;
     const graphics::Canvas inside = canvas.clipped_to(scene);
 
     const formats::ScenarioGrid& grid = map_->terrain();
     const std::int32_t width          = grid.width();
 
-    {core::perf::Scope timing{core::perf::terrain};
     for (std::int32_t x = 0; x < width; ++x) {
         const formats::GridSpan& span = grid.columns()[static_cast<std::size_t>(x)];
         for (std::int32_t y = span.start; y < span.stop; ++y) {
@@ -126,9 +125,30 @@ void MapRenderer::paint(const graphics::Canvas& canvas, core::Point camera, std:
     }
 
     paint_map_edges(inside, shroud_.texture(), grid, level, camera);
+    return scene;
+}
+
+void MapRenderer::paint(const graphics::Canvas& canvas,core::Point camera,std::int32_t level,std::uint32_t now) const {
+    core::Rect scene;
+    {
+        core::perf::Scope timing{core::perf::terrain};
+        const auto clip=canvas.local_clip();
+        if (cache_ground_ && !clip.empty()) {
+            if (ground_camera_!=camera || ground_clip_!=clip || ground_level_!=level) {
+                if (ground_cache_.size()!=clip.size()) ground_cache_=graphics::Surface565{clip.size()};
+                else ground_cache_.fill(graphics::Color565{});
+                const graphics::Canvas cached{ground_cache_};
+                ground_scene_=paint_ground_frame(cached.translated(core::Point{}-clip.origin()),camera,level);
+                ground_camera_=camera;ground_clip_=clip;ground_level_=level;
+            }
+            canvas.draw_surface(ground_cache_,clip.origin());
+            scene=ground_scene_;
+        } else scene=paint_ground_frame(canvas,camera,level);
     }
-    {core::perf::Scope timing{core::perf::objects};objects_.paint(inside, camera, level, shroud_.plane(), now);}
-    {core::perf::Scope timing{core::perf::shroud};shroud_.paint(inside, camera, level);}
+    if (scene.empty()) return;
+    const auto inside=canvas.clipped_to(scene);
+    {core::perf::Scope timing{core::perf::objects};objects_.paint(inside,camera,level,shroud_.plane(),now);}
+    {core::perf::Scope timing{core::perf::shroud};shroud_.paint(inside,camera,level);}
 }
 
 core::Point MapRenderer::army_pin(core::Point cell, std::int32_t level, bool bridge) const {

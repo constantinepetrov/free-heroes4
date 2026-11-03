@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -85,6 +86,12 @@ jobs:
         with:
           pattern: OpenH4-native-*-${{ github.sha }}
           path: android/perf-builds
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 41714055784
+          github-token: ${{ github.token }}
+          pattern: OpenH4-native-*
+          path: android/perf-baseline
       - name: Enable emulator KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

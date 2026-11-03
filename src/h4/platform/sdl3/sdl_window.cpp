@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <format>
 #include <memory>
 #include <optional>
@@ -104,7 +105,8 @@ public:
         renderer_.reset(SDL_CreateRenderer(window_.get(), nullptr));
         if (!renderer_)
             return std::unexpected{sdl_error("SDL_CreateRenderer")};
-        SDL_SetRenderVSync(renderer_.get(), 1);
+        if (!SDL_SetRenderVSync(renderer_.get(), 1)) SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,"VSync unavailable: %s",SDL_GetError());
+        SDL_Log("openh4.renderer backend=%s logical=%dx%d texture=%s",SDL_GetRendererName(renderer_.get()),logical_.width,logical_.height,SDL_GetPixelFormatName(kTextureFormat));
         if (!SDL_SetRenderLogicalPresentation(renderer_.get(), logical_.width, logical_.height, SDL_LOGICAL_PRESENTATION_LETTERBOX))
             return std::unexpected{sdl_error("SDL_SetRenderLogicalPresentation")};
         if (!rebuild_texture())
@@ -207,19 +209,20 @@ public:
 
 private:
     void upload(const graphics::Surface565& frame) {
-        const int pitch = logical_.width * 2;
-        if constexpr (kTextureFormat == SDL_PIXELFORMAT_RGB565) {
-            SDL_UpdateTexture(texture_.get(), nullptr, frame.bits().data(), pitch);
-        } else {
-            void* pixels  = nullptr;
-            int out_pitch = 0;
-            if (!SDL_LockTexture(texture_.get(), nullptr, &pixels, &out_pitch))
-                return;
-            SDL_ConvertPixels(
-                logical_.width, logical_.height, SDL_PIXELFORMAT_RGB565, frame.bits().data(), pitch, kTextureFormat, pixels, out_pitch
-            );
-            SDL_UnlockTexture(texture_.get());
+        void* pixels=nullptr;int out_pitch=0;
+        if (!SDL_LockTexture(texture_.get(),nullptr,&pixels,&out_pitch)) {
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER,"Frame texture lock failed: %s",SDL_GetError());return;
         }
+        if constexpr (kTextureFormat==SDL_PIXELFORMAT_RGB565) {
+            const auto pitch=static_cast<std::size_t>(logical_.width)*sizeof(std::uint16_t);
+            if (out_pitch>=static_cast<int>(pitch))
+                for(int y=0;y<logical_.height;++y)
+                    std::memcpy(static_cast<std::byte*>(pixels)+static_cast<std::size_t>(y)*static_cast<std::size_t>(out_pitch),frame.bits().data()+static_cast<std::size_t>(y)*static_cast<std::size_t>(logical_.width),pitch);
+            else SDL_LogError(SDL_LOG_CATEGORY_RENDER,"Invalid locked texture pitch");
+        } else if (!SDL_ConvertPixels(logical_.width,logical_.height,SDL_PIXELFORMAT_RGB565,frame.bits().data(),logical_.width*2,kTextureFormat,pixels,out_pitch)) {
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER,"Frame texture conversion failed: %s",SDL_GetError());
+        }
+        SDL_UnlockTexture(texture_.get());
     }
 
     bool rebuild_texture() {
