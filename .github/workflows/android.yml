@@ -21,6 +21,9 @@ jobs:
         with:
           gradle-version: '8.14.3'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - name: Install native toolchain
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865' 'cmake;3.31.6'
       - name: Get matching SDL native and Java sources
