@@ -80,7 +80,7 @@ void BattleView::paint(const graphics::Canvas& c) const {
     }
     if (!battle_->finished()) {
         const auto& u=battle_->active();label(std::format("{} turn\n{}\nMove: {}",u.side==0?"Your":"Enemy",u.name,battle_->movement_left()),{{panel_,68},{frame_.width-panel_-12,104}});
-    } else label(std::format("{}\nExperience: {}",battle_->message(),battle_->experience_award(0)),{{panel_,68},{frame_.width-panel_-12,104}});
+    } else label(std::format("{}\nEnemy XP value: {}",battle_->message(),battle_->experience_award(0)),{{panel_,68},{frame_.width-panel_-12,104}});
     if (inspected_>=0 && static_cast<std::size_t>(inspected_)<battle_->units().size()) {
         const auto& u=battle_->units()[static_cast<std::size_t>(inspected_)];
         label(std::format("{}\nCount: {}\nHP: {} / {}\nAttack / Defense: {} / {}\nDamage: {}-{}\nSpeed: {}",u.name,u.count(),u.hp,static_cast<std::int64_t>(u.max_hp)*u.initial_count,u.attack,u.defense,u.damage_low,u.damage_high,u.speed),{{panel_,180},{frame_.width-panel_-12,std::min(270,button(0).origin().y-192)}});

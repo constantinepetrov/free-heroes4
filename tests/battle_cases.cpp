@@ -78,6 +78,13 @@ void battle_checks() {
         auto result=world().resolve_battle(PlayerId{0},1,2,b,100);CHECK(result);CHECK(!result->army(1));CHECK(result->army(2));CHECK(result->heroes().empty());
     }
     {
+        auto hero=unit(0,0,1,1,1,10,1,5);hero.hero=true;
+        auto b=start({hero,unit(0,1,1,2,1,100,100,1),unit(1,0,2,1,1,100,50,2)});
+        CHECK(b.apply({BattleActionKind::defend}));CHECK(b.apply({BattleActionKind::attack,{},0}));
+        CHECK(b.apply({BattleActionKind::attack,{},2}));CHECK(b.winner()==0);CHECK(b.experience_award(0)==7);
+        auto result=world().resolve_battle(PlayerId{0},1,2,b,100);CHECK(result);CHECK(result->heroes().empty());CHECK(result->army(1));
+    }
+    {
         auto b=start({unit(0,0,1,1),unit(1,0,10,6,2,10,1,1)});int actions=0;
         while (!b.finished() && actions<300) {CHECK(b.apply(b.ai_action()));++actions;}
         CHECK(b.finished());CHECK(b.winner()==0);CHECK(actions<100);

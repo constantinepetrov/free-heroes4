@@ -57,7 +57,7 @@ int main(int argc,char** argv) {try {
     int turns=0;
     while (c.battle() && !c.battle()->finished() && turns<2000) {
         if (c.battle()->active().side==0) {
-            auto action=c.battle()->ai_action();const auto* view=c.battle_screen();check(view,"Missing battle view");
+            auto action=c.battle()->active().hero?rules::BattleAction{rules::BattleActionKind::defend}:c.battle()->ai_action();const auto* view=c.battle_screen();check(view,"Missing battle view");
             if (action.kind==rules::BattleActionKind::defend) tap(c.view(),view->end_turn_rect());
             else {
                 const auto target=action.kind==rules::BattleActionKind::attack?c.battle()->units()[static_cast<std::size_t>(action.target)].at:action.to;
@@ -66,9 +66,14 @@ int main(int argc,char** argv) {try {
         }
         advance();++turns;
     }
-    check(c.battle() && c.battle()->finished(),"Battle did not finish");const auto winner=*c.battle()->winner();const auto counts0=c.battle()->survivors(0),counts1=c.battle()->survivors(1);
+    check(c.battle() && c.battle()->finished(),"Battle did not finish");const auto winner=*c.battle()->winner();const auto xp_pool=c.battle()->experience_award(0);
+    std::int64_t before_xp=0;for (const auto& h:c.game()->heroes()) if (h.army==attacker) before_xp+=h.experience;
+    const auto counts0=c.battle()->survivors(0),counts1=c.battle()->survivors(1);
     std::cout<<"finished winner="<<winner<<" actions="<<turns<<" xp="<<c.battle()->experience_award(0)<<'\n';shot(c,out/"battle-result.png");
     tap(c.view(),c.battle_screen()->confirm_rect());advance();check(!c.battle(),"Result did not return to adventure");
+    std::int64_t after_xp=0;int surviving_heroes=0;
+    for (const auto& h:c.game()->heroes()) if (h.army==attacker) {after_xp+=h.experience;++surviving_heroes;}
+    if (winner==0 && surviving_heroes>0) {check(after_xp-before_xp==xp_pool,"Hero XP was not awarded");std::cout<<"hero-experience before="<<before_xp<<" after="<<after_xp<<" awarded="<<xp_pool<<'\n';}
     check((c.game()->army(defender)==nullptr)==(winner!=1),"Defender world state mismatch");
     check((c.game()->army(attacker)==nullptr)==(winner!=0),"Attacker world state mismatch");
     actors=c.scenario().map().actors();

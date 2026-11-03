@@ -70,13 +70,17 @@ void AdventureController::finish_battle() {
     const int ar=model::sight_radius(actors[encounter_.attacker],{1,1}),dr=model::sight_radius(actors[encounter_.defender],{1,1});
     const auto applied=scenario_.map().replace_battle_armies(encounter_.attacker,std::move(a),a_wounds,encounter_.defender,std::move(d),d_wounds);
     if (report_.failed(applied)) return;
+    std::int64_t awarded_xp=0;
+    for (const auto& hero:next->heroes()) if (hero.army==encounter_.attacker) {
+        for (const auto& before:game_->heroes()) if (before.army==hero.army && before.slot==hero.slot) awarded_xp+=hero.experience-before.experience;
+    }
     game_=std::move(*next);
     for (const auto [id,radius]:{std::pair{encounter_.attacker,ar},std::pair{encounter_.defender,dr}}) {
         if (!game_->army(id)) {
             if (shroud_) shroud_->army_defeated(id,radius);
         }
     }
-    const std::string result=std::format("{}; experience {}",battle_->message(),battle_->experience_award(0));
+    const std::string result=std::format("{}; experience {}",battle_->message(),awarded_xp);
     report_("battle.result "+result);
     for (const auto& hero:game_->heroes()) if (hero.army==encounter_.attacker || hero.army==encounter_.defender)
         report_(std::format("battle.hero army={} slot={} xp={} level={}",hero.army,hero.slot,hero.experience,hero.level));
