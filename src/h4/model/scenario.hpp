@@ -64,6 +64,8 @@ public:
         return placed_;
     }
 
+    [[nodiscard]] Map& map() noexcept { return *map_; }
+
     [[nodiscard]] const Map& map() const noexcept {
         return *map_;
     }

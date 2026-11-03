@@ -48,13 +48,24 @@ void ViewerShroud::moved(std::uint32_t actor, core::Point cell, std::int32_t lev
     std::vector<model::Eye> others;
     for (std::uint32_t i = 0; i < actors.size(); ++i) {
         const model::MapActor& other = actors[i];
-        if (i == actor || !other.owned() || (team_ >> other.owner & 1U) == 0)
+        if (i == actor || other.removed || at_[i].level<0 || !other.owned() || (team_ >> other.owner & 1U) == 0)
             continue;
         const model::Eye eye = eye_of(other, at_[i]);
         if (eye.radius > 0)
             others.push_back(eye);
     }
     shroud_ = shroud_->moved(map_->terrain(), eye_of(self, from), eye_of(self, at_[actor]), others, *transitions_);
+}
+
+void ViewerShroud::army_defeated(std::uint32_t actor,int old_radius) {
+    if (actor>=at_.size() || at_[actor].level<0) return;
+    const Cell old=at_[actor];at_[actor].level=-1;
+    const auto actors=map_->actors();const auto& self=actors[actor];
+    if (!shroud_ || !transitions_ || !self.owned() || (team_>>self.owner&1U)==0) return;
+    std::vector<model::Eye> others;
+    for (std::uint32_t i=0;i<actors.size();++i)
+        if (i!=actor && at_[i].level>=0 && !actors[i].removed && actors[i].owned() && (team_>>actors[i].owner&1U)!=0) others.push_back(eye_of(actors[i],at_[i]));
+    shroud_=shroud_->moved(map_->terrain(),{old.cell,{1,1},old.level,old_radius},{old.cell,{1,1},old.level,0},others,*transitions_);
 }
 
 }

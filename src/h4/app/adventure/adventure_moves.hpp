@@ -72,6 +72,7 @@ public:
     void object_taken(std::uint32_t actor) {
         board_.remove(actor);
     }
+    [[nodiscard]] bool hostile(std::uint32_t actor) const;
     void army_moved(std::uint32_t actor, const rules::MapPoint& to);
     [[nodiscard]] rules::MapPoint position(std::uint32_t actor) const noexcept {
         return board_.origin(actor);

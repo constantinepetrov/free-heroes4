@@ -9,3 +9,7 @@ compile_commands.json
 .cxx/
 local.properties
 android/smoke-output/
+
+*.keystore
+*.jks
+*.p12

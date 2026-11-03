@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "h4/app/adventure/adventure_moves.hpp"
+#include "h4/screens/battle/battle_view.hpp"
 #include "h4/app/adventure/adventure_panel.hpp"
 #include "h4/app/adventure/army_mover.hpp"
 #include "h4/app/adventure/journey.hpp"
@@ -122,6 +123,12 @@ public:
     }
 
 private:
+    void begin_battle(std::uint32_t defender, const rules::PathField::PathStep& step);
+    void show_battle();
+    void battle_action(const rules::BattleAction& action);
+    void battle_tick(std::uint32_t now);
+    void finish_battle();
+    void log_battle() const;
     void on_button(screens::AdventureButton button);
     void ask_end_turn();
     [[nodiscard]] bool armies_can_move() const;
@@ -224,6 +231,11 @@ private:
                            report_,
                            [this] { return view_->frame_size(); },
                            [this] { on_messages_read(); }};
+    struct Encounter {std::uint32_t attacker=0, defender=0; int cost=0;};
+    Encounter encounter_;
+    std::optional<rules::Battle> battle_;
+    ModalSlot<screens::BattleView> battle_view_{host_};
+    std::uint32_t last_battle_tick_ = 0;
     ModalSlot<screens::BasicDialog> question_{host_};
     ModalSlot<screens::TreasureChestDialog> chest_{host_};
     ModalSlot<screens::ArmyWindowView> army_window_{host_};

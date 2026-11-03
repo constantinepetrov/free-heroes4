@@ -213,4 +213,9 @@ void AdventureMoves::army_moved(std::uint32_t actor, const rules::MapPoint& to) 
     board_.move_army(actor, to);
 }
 
+bool AdventureMoves::hostile(std::uint32_t actor) const {
+    const auto list=map_->actors();
+    return selected_ && actor<list.size() && list[actor].is_army() && !list[actor].army.empty() && !friendly(list[*selected_].owner,list[actor].owner);
+}
+
 }

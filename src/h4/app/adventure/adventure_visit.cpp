@@ -28,6 +28,10 @@ core::Point AdventureController::above_object(const rules::PathField::PathStep& 
 void AdventureController::visit(std::uint32_t object, const rules::PathField::PathStep& step) {
     if (!game_ || !me_ || !face_walker(step))
         return;
+    if (moves_ && moves_->hostile(object)) {
+        begin_battle(object, step);
+        return;
+    }
     if (game_->shrine(object) != nullptr) {
         visit_shrine(object, step);
         settle_walk();

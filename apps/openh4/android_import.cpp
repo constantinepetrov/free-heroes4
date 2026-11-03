@@ -34,3 +34,9 @@ Java_org_openh4_android_LauncherActivity_validateResources(JNIEnv* env, jclass, 
         return env->NewStringUTF(e.what());
     }
 }
+
+#include "../../tests/battle_cases.hpp"
+extern "C" JNIEXPORT jstring JNICALL Java_org_openh4_android_LauncherActivity_combatSelfTest(JNIEnv* env,jclass) {
+    try {h4::tests::battle_checks();return nullptr;}
+    catch(const std::exception& e) {return env->NewStringUTF(e.what());}
+}

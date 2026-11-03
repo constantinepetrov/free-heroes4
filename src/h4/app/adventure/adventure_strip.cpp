@@ -138,6 +138,8 @@ strip_entry(const assets::Assets& assets, const model::MapActor* army, std::size
         fill_hero(out, assets, army->army, ring, database, spent);
     else if (database != nullptr)
         fill_stack(out, assets, army->army, ring, *database, spent);
+    if (army != nullptr && ring < army->wounds.size() && army->wounds[ring] > 0 && out.shown)
+        out.health = std::format("{} / {}", army->wounds[ring], out.health);
     return out;
 }
 

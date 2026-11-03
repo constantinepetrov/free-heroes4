@@ -33,6 +33,7 @@ public final class LauncherActivity extends Activity {
         System.loadLibrary("main");
     }
     static native String validateResources(String dataPath);
+    static native String combatSelfTest();
     private File game() { return new File(getFilesDir(), "game"); }
 
     @Override public void onCreate(Bundle state) {
@@ -46,7 +47,7 @@ public final class LauncherActivity extends Activity {
         title.setText("OpenH4 - экспериментальный Android-порт"); title.setTextSize(24);
         layout.addView(title);
         TextView instructions = new TextView(this);
-        instructions.setText("Выберите свою папку Heroes IV с Data и maps или подготовленную папку ресурсов. Файлы будут скопированы в память приложения. Исходная папка не изменяется.\n\nВ движке пока отсутствуют бои, игровой ИИ, сохранения и звук.");
+        instructions.setText("Выберите свою папку Heroes IV с Data и maps или подготовленную папку ресурсов. Файлы будут скопированы в память приложения. Исходная папка не изменяется.\n\nБазовый рукопашный бой доступен. Полноценный ИИ, сохранения, звук и заклинания пока отсутствуют.");
         layout.addView(instructions);
         importButton = new Button(this); importButton.setText("Импортировать папку");
         importButton.setOnClickListener(v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)

@@ -9,6 +9,7 @@
 #include "h4/core/error.hpp"
 #include "h4/model/resources.hpp"
 #include "h4/rules/calendar.hpp"
+#include "h4/rules/battle.hpp"
 #include "h4/rules/command.hpp"
 #include "h4/rules/inventory.hpp"
 #include "h4/rules/map_point.hpp"
@@ -121,6 +122,7 @@ public:
     [[nodiscard]] const ArmyPlace* army(std::uint32_t actor) const noexcept;
 
     [[nodiscard]] core::Result<GameState> apply(const Command& command) const;
+    [[nodiscard]] core::Result<GameState> resolve_battle(PlayerId player, std::uint32_t attacker, std::uint32_t defender, const Battle& battle, int cost) const;
 
 private:
     GameState(std::uint8_t player_count,

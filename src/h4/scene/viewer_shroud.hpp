@@ -30,6 +30,7 @@ public:
     }
 
     void moved(std::uint32_t actor, core::Point cell, std::int32_t level);
+    void army_defeated(std::uint32_t actor, int old_radius);
 
 private:
     struct Cell {

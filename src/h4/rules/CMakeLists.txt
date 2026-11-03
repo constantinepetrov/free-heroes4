@@ -1,6 +1,11 @@
 h4_module(rules
   DEPENDS core formats model
   SOURCES
+    battle.cpp
+    battle.hpp
+    battle_army.cpp
+    battle_army.hpp
+    game_state_battle.cpp
     adventure_board.cpp
     adventure_board.hpp
     adventure_path.cpp

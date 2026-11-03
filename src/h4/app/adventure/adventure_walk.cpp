@@ -95,6 +95,7 @@ void AdventureController::start_walk() {
 }
 
 void AdventureController::on_ticked(std::uint32_t now) {
+    if (battle_) {battle_tick(now);return;}
     if (!journey_.walking())
         return;
     journey_.tick(

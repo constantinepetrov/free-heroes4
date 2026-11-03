@@ -1,7 +1,9 @@
 h4_module(screens
-  DEPENDS core cursor formats graphics model platform scene ui
+  DEPENDS core cursor formats graphics model platform scene ui rules
   PRIVATE_DEPENDS assets
   SOURCES
+    battle/battle_view.cpp
+    battle/battle_view.hpp
     adventure/adventure_layout.cpp
     adventure/adventure_layout.hpp
     adventure/adventure_view.cpp

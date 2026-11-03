@@ -9,8 +9,8 @@ android {
         applicationId 'org.openh4.android'
         minSdk 30
         targetSdk 36
-        versionCode 1
-        versionName '0.1.0-android-dev'
+        versionCode 2
+        versionName '0.2.0-combat-dev'
         testInstrumentationRunner 'org.openh4.android.ImportSmokeTest'
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
         externalNativeBuild { cmake {
@@ -21,6 +21,20 @@ android {
     externalNativeBuild { cmake { path '../../CMakeLists.txt'; version '3.31.6' } }
     sourceSets { main { java.srcDirs += "${sdl}/android-project/app/src/main/java" } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    buildTypes { debug { debuggable true } }
+    def signingPath = System.getenv('OPENH4_KEYSTORE')
+    def signingPassword = System.getenv('OPENH4_KEYSTORE_PASSWORD')
+    if (System.getenv('CI') && (!signingPath || !signingPassword))
+        throw new GradleException('Persistent signing credentials are required in CI')
+    signingConfigs {
+        persistent {
+            if (signingPath) {
+                storeFile file(signingPath)
+                storePassword signingPassword
+                keyAlias 'openh4'
+                keyPassword signingPassword
+            }
+        }
+    }
+    buildTypes { debug { debuggable true; if (signingPath) signingConfig signingConfigs.persistent } }
     lint { abortOnError true; lintConfig file('../lint.xml') }
 }

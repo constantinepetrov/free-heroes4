@@ -49,3 +49,8 @@ if(H4_BUILD_PLATFORM)
   add_subdirectory(src/h4/platform/sdl3)
   add_subdirectory(apps/openh4)
 endif()
+
+if(NOT ANDROID AND NOT IOS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()

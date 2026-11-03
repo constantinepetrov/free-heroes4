@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <span>
 #include <string>
@@ -53,6 +54,8 @@ struct MapActor {
     formats::ArmyRecord army;
     std::optional<Alignment> alignment;
     bool starting_troops = false;
+    bool removed = false;
+    std::array<int,7> wounds{};
     formats::ArmyPatrol patrol;
     formats::TownBuildings town_buildings;
     std::string message;
@@ -65,7 +68,7 @@ struct MapActor {
         return owner < formats::kNoOwner;
     }
     [[nodiscard]] bool is_army() const noexcept {
-        return model.empty();
+        return !removed && model.empty();
     }
 };
 
@@ -85,6 +88,8 @@ public:
     [[nodiscard]] std::span<const MapActor> actors() const noexcept {
         return actors_;
     }
+    [[nodiscard]] core::Result<void> replace_battle_armies(std::uint32_t attacker, formats::ArmyRecord a, std::array<int,7> a_hp,
+                                                          std::uint32_t defender, formats::ArmyRecord d, std::array<int,7> d_hp);
     [[nodiscard]] std::optional<std::uint32_t> index_of(const MapActor* actor) const noexcept;
 
     [[nodiscard]] std::uint16_t dimension() const noexcept {

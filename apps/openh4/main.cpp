@@ -123,7 +123,13 @@ int main(int argc, char** argv) {
         assets,
         content,
         app::maps_dir_of(*data_dir),
-        [](std::string_view message) { std::println("openh4: {}", message); },
+        [](std::string_view message) {
+#ifdef __ANDROID__
+            SDL_Log("openh4: %s", std::string{message}.c_str());
+#else
+            std::println("openh4: {}", message);
+#endif
+        },
         &*database
     );
     controller->set_settings(settings.game);

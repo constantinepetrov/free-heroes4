@@ -30,8 +30,26 @@ jobs:
         run: |
           git clone --depth 1 --branch release-3.4.14 https://github.com/libsdl-org/SDL.git "$SDL3_SOURCE_DIR"
           test "$(git -C "$SDL3_SOURCE_DIR" rev-parse HEAD)" = '147a8ee32dbf9ac02f3794964490687b6bbda1bc'
+      - name: Restore persistent signing key
+        env:
+          OPENH4_KEYSTORE_BASE64: ${{ secrets.OPENH4_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          test -n "$OPENH4_KEYSTORE_BASE64"
+          printf '%s' "$OPENH4_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/openh4.p12"
       - name: Assemble APK and importer test
+        env:
+          OPENH4_KEYSTORE: ${{ runner.temp }}/openh4.p12
+          OPENH4_KEYSTORE_PASSWORD: ${{ secrets.OPENH4_KEYSTORE_PASSWORD }}
         run: gradle -p android --no-daemon --max-workers=2 assembleDebug assembleDebugAndroidTest lintDebug
+      - name: Verify public signing certificate
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk > android/app/build/signing.txt
+          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' android/app/build/signing.txt)
+          test "$actual" = "$(cat android/signing-certificate.sha256)"
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/openh4.p12"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -40,6 +58,7 @@ jobs:
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/outputs/apk/androidTest/debug/*.apk
             android/app/build/reports/lint-results-debug.html
+            android/app/build/signing.txt
   smoke:
     needs: build
     runs-on: ubuntu-24.04

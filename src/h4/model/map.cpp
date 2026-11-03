@@ -59,7 +59,21 @@ std::string_view actor_kind_name(ActorKind kind) noexcept {
 }
 
 bool shows_on_map(const MapActor& actor) noexcept {
-    return actor.family != "event_trigger";
+    return !actor.removed && actor.family != "event_trigger";
+}
+
+core::Result<void> Map::replace_battle_armies(std::uint32_t attacker, formats::ArmyRecord a, std::array<int,7> a_hp,
+                                                    std::uint32_t defender, formats::ArmyRecord d, std::array<int,7> d_hp) {
+    if (attacker==defender || attacker>=actors_.size() || defender>=actors_.size() || !actors_[attacker].is_army() || !actors_[defender].is_army())
+        return core::fail(core::ErrorCode::invalid_argument,"Battle armies no longer exist");
+    actors_[attacker].army=std::move(a);actors_[attacker].wounds=a_hp;
+    actors_[defender].army=std::move(d);actors_[defender].wounds=d_hp;
+    for (auto id : {attacker,defender}) {
+        auto& actor=actors_[id];actor.removed=actor.army.empty();
+        actor.kind=actor.army.leader()?ActorKind::hero:ActorKind::monster;
+        actor.name=actor.army.leader()?actor.army.leader()->name:std::string{};
+    }
+    return {};
 }
 
 core::Result<Map> Map::parse(std::span<const std::byte> payload, const formats::ScenarioHeader& header, std::size_t offset) {
@@ -114,7 +128,7 @@ std::optional<std::uint32_t> Map::index_of(const MapActor* actor) const noexcept
 std::vector<const MapActor*> Map::actors_of(ActorKind kind) const {
     std::vector<const MapActor*> out;
     for (const MapActor& actor : actors_)
-        if (actor.kind == kind)
+        if (!actor.removed && actor.kind == kind)
             out.push_back(&actor);
     return out;
 }
@@ -122,7 +136,7 @@ std::vector<const MapActor*> Map::actors_of(ActorKind kind) const {
 std::vector<const MapActor*> Map::owned_by(PlayerColour colour) const {
     std::vector<const MapActor*> out;
     for (const MapActor& actor : actors_)
-        if (actor.owned() && actor.owner == std::to_underlying(colour))
+        if (!actor.removed && actor.owned() && actor.owner == std::to_underlying(colour))
             out.push_back(&actor);
     return out;
 }

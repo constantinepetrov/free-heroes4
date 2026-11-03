@@ -2,6 +2,7 @@ h4_module(app
   DEPENDS assets core cursor graphics model platform rules scene screens ui
   PRIVATE_DEPENDS ai formats io net
   SOURCES
+    adventure/adventure_battle.cpp
     application.cpp
     application.hpp
     controller.cpp

@@ -69,6 +69,8 @@ void AdventureController::on_resized(core::Size frame) {
     question_.forget();
     chest_.forget();
     army_window_.forget();
+    battle_view_.forget();
+    if (battle_) {show_battle();return;}
     if (showing)
         messages_.show_first();
     if (chest_visit_)
@@ -106,7 +108,7 @@ void AdventureController::select_first() {
         if (!row.human)
             continue;
         const std::vector<const model::MapActor*> mine = scenario_.map().owned_by(row.colour);
-        for (model::ActorKind kind : {model::ActorKind::hero, model::ActorKind::town})
+        for (model::ActorKind kind : {model::ActorKind::hero, model::ActorKind::monster, model::ActorKind::town})
             for (const model::MapActor* actor : mine)
                 if (actor->kind == kind) {
                     centre_on_actor(*actor);

@@ -64,6 +64,7 @@ void AdventureController::open_game_settings() {
 }
 
 void AdventureController::on_key(platform::Key key) {
+    if (battle_) {if (battle_view_.get()) battle_view_.get()->refresh();return;}
     if (settings_popup_.on_key(key) || question_.on_key(key) || army_window_.on_key(key) || chest_.on_key(key) ||
         messages_.on_key(key) || system_scroll_.on_key(key))
         return;
