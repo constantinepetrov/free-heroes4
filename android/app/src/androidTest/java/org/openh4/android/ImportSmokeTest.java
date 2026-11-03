@@ -34,7 +34,7 @@ public final class ImportSmokeTest extends Instrumentation {
                 if (!report.isFile()) throw new AssertionError("Renderer benchmark timed out");
                 // Wait for the native writer to close before exposing the result.
                 Thread.sleep(300);
-                String json = Files.readString(report.toPath());
+                String json = new String(Files.readAllBytes(report.toPath()), java.nio.charset.StandardCharsets.UTF_8);
                 if (!json.startsWith("[")) throw new AssertionError("Benchmark: " + json);
                 result.putString("stream", "BENCHMARK " + json + "\nPASS: renderer benchmark\n");
                 finish(Activity.RESULT_OK, result); return;

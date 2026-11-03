@@ -46,7 +46,8 @@ bool Application::step(std::chrono::milliseconds elapsed) {
     }
     {core::perf::Scope timing{core::perf::update};advance(elapsed);}
     render();
-    const bool running=take_transition();
+    bool running;
+    {core::perf::Scope timing{core::perf::controller};running=take_transition();}
     core::perf::end_frame();
     return running;
 }

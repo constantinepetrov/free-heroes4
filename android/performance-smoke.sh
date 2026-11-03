@@ -5,14 +5,11 @@ adb shell wm size 2208x1768
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
 adb shell getprop > android/smoke-output/emulator-properties.txt
-for label in baseline-debug baseline-release debug release; do
-  case "$label" in
-    baseline-debug) folder=android/perf-baseline; variant=Debug; lower=debug ;;
-    baseline-release) folder=android/perf-baseline; variant=Release; lower=release ;;
-    debug) folder=android/perf-builds; variant=Debug; lower=debug ;;
-    release) folder=android/perf-builds; variant=Release; lower=release ;;
-  esac
-  root=$(find "$folder" -maxdepth 1 -type d -name "OpenH4-native-$variant-*")
+for label in baseline-debug baseline-release optimized-debug optimized-release; do
+  renderer=${label%-*}
+  lower=${label##*-}
+  variant=$(printf '%s' "$lower" | sed 's/^./\U&/')
+  root=$(find android/perf-builds -maxdepth 1 -type d -name "OpenH4-native-$renderer-$variant-*")
   test -n "$root"
   adb install -r "$root/outputs/apk/$lower/app-$lower.apk"
   adb install -r "$root/outputs/apk/androidTest/$lower/app-$lower-androidTest.apk"

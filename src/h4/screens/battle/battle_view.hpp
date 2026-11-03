@@ -11,6 +11,7 @@ public:
     BattleView(core::Size frame,const formats::Font& font,const rules::Battle& battle,std::vector<const formats::Layer*> faces);
     void handle(const platform::InputEvent& event) override;
     void paint(const graphics::Canvas& canvas) const override;
+    [[nodiscard]] bool opaque() const noexcept override {return true;}
     [[nodiscard]] bool holds(core::Point) const override {return true;}
     [[nodiscard]] bool covers(core::Point) const override {return true;}
     void refresh(std::string error = {});

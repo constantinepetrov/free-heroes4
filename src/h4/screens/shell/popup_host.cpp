@@ -91,7 +91,8 @@ void PopupHost::advance(core::Instant now) {
 }
 
 void PopupHost::paint(const graphics::Canvas& canvas) const {
-    base_->paint(canvas);
+    if (popup_ == nullptr || !popup_->opaque())
+        base_->paint(canvas);
     if (popup_ != nullptr)
         popup_->paint(canvas);
 }

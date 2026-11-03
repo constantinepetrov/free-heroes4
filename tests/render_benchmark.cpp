@@ -18,6 +18,7 @@
 #include "h4/rules/battle.hpp"
 #include "h4/screens/adventure/map_window.hpp"
 #include "h4/screens/battle/battle_view.hpp"
+#include "h4/screens/shell/popup_host.hpp"
 #include "h4/screens/boot/main_menu_view.hpp"
 namespace h4::tests {
 namespace {
@@ -167,6 +168,25 @@ std::string render_benchmark(platform::Window& window){
  const auto tap=[&](core::Rect box){auto at=box.centre();fixture->battle_view.handle(platform::events::PointerPressed{at,platform::PointerButton::primary,false});fixture->battle_view.handle(platform::events::PointerReleased{at,platform::PointerButton::primary});};
  tap(fixture->battle_view.cell_rect({2,1}));check(!battle_moved,"Battle move skipped confirmation");tap(fixture->battle_view.confirm_rect());
  check(battle_moved && fixture->battle.active().at==core::Point{2,1},"Battle tap did not move active unit");fixture->battle=battle_fixture();fixture->battle_view.refresh();
+ struct Background final:screens::View {
+  mutable int paints=0;
+  void handle(const platform::InputEvent&)override{}
+  void paint(const graphics::Canvas& c)const override{++paints;c.fill_rect({{0,0},{1280,1024}},{255,0,0,255});}
+ } background;
+ screens::PopupHost host{background};
+ host.open(std::make_unique<screens::BattleView>(core::Size{1280,1024},fixture->assets.font,fixture->battle,std::vector<const formats::Layer*>(14,fixture->assets.art.find("opaque"))));
+ graphics::Surface565 composite{{1280,1024}},direct{{1280,1024}};
+ host.paint(graphics::Canvas{composite});fixture->battle_view.paint(graphics::Canvas{direct});
+ check(background.paints==0 && std::ranges::equal(composite.bits(),direct.bits()),"Opaque battle repainted hidden map or changed pixels");
+ host.close();host.paint(graphics::Canvas{composite});check(background.paints==1,"Closing battle did not restore adventure painting");
+ struct Partial final:screens::Popup {
+  void handle(const platform::InputEvent&)override{}
+  void paint(const graphics::Canvas& c)const override{c.fill_rect({{5,5},{10,10}},{0,255,0,255});}
+  bool holds(core::Point)const override{return true;}
+  bool covers(core::Point)const override{return true;}
+ };
+ host.open(std::make_unique<Partial>());host.paint(graphics::Canvas{composite});check(background.paints==2,"Partial popup hid its background");
+
  app::Application application{window,cursor,std::move(controller)};std::string result="[";
  for(int mode=0;mode<5;++mode){fixture->mode=mode;fixture->frame=0;fixture->map_view.set_camera({1200,600});
   for(int n=0;n<5;++n)check(application.step(std::chrono::milliseconds{16}),"Warmup exited");

@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 namespace h4::core::perf {
-enum Stage : std::size_t { input, update, paint, map, terrain, objects, shroud, upload, present, total, count };
+enum Stage : std::size_t { input, update, paint, map, terrain, objects, shroud, upload, present, controller, total, count };
 using Times = std::array<double,count>;
 using Clock = std::chrono::steady_clock;
 void enable(std::function<void(std::string_view)> sink = {});
