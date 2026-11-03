@@ -78,6 +78,9 @@ public:
     [[nodiscard]] const rules::GameState* game() const noexcept {
         return game_.has_value() ? &*game_ : nullptr;
     }
+    [[nodiscard]] const rules::Battle* battle() const noexcept { return battle_ ? &*battle_ : nullptr; }
+    [[nodiscard]] const screens::BattleView* battle_screen() const noexcept { return battle_view_.get(); }
+    [[nodiscard]] std::pair<std::uint32_t,std::uint32_t> battle_armies() const noexcept { return {encounter_.attacker,encounter_.defender}; }
     [[nodiscard]] bool walking() const noexcept {
         return journey_.walking();
     }

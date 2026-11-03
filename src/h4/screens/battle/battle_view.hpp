@@ -14,6 +14,9 @@ public:
     [[nodiscard]] bool holds(core::Point) const override {return true;}
     [[nodiscard]] bool covers(core::Point) const override {return true;}
     void refresh(std::string error = {});
+    [[nodiscard]] core::Rect cell_rect(core::Point at) const { return cell(at); }
+    [[nodiscard]] core::Rect confirm_rect() const { return button(0); }
+    [[nodiscard]] core::Rect end_turn_rect() const { return button(1); }
     core::Signal<rules::BattleAction> action;
     core::Signal<> returned;
 private:

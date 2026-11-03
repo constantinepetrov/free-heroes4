@@ -20,14 +20,16 @@ void AdventureController::begin_battle(std::uint32_t defender,const rules::PathF
 }
 void AdventureController::show_battle() {
     if (!battle_) return;
-    const auto* font=assets_->font_for_size(16);if (!font) {report_("Missing battle font");return;}
+    const auto* font=assets_->font_for_size(view_->frame_size().height<800?16:20);if (!font) {report_("Missing battle font");return;}
     std::vector<const formats::Layer*> faces;
     for (const auto& u:battle_->units()) {
         const auto& actor=scenario_.map().actors()[u.side==0?encounter_.attacker:encounter_.defender];
         const auto& slot=actor.army.slots[static_cast<std::size_t>(u.slot)];
-        faces.push_back(u.hero?hero_face(*assets_,slot.hero,52):creature_face(*assets_,static_cast<std::int16_t>(u.kind),52));
+        faces.push_back(u.hero?hero_face(*assets_,slot.hero,82):creature_face(*assets_,static_cast<std::int16_t>(u.kind),82));
     }
     auto screen=std::make_unique<screens::BattleView>(view_->frame_size(),*font,*battle_,std::move(faces));
+    const auto box=screen->confirm_rect();const auto tile=screen->cell_rect({0,0});
+    report_(std::format("battle.layout width={} height={} cell_x={} cell_y={} tile={} confirm_x={} confirm_y={}",view_->frame_size().width,view_->frame_size().height,tile.origin().x,tile.origin().y,tile.width(),box.origin().x+box.width()/2,box.origin().y+box.height()/2));
     battle_view_.open(std::move(screen),[this](auto& opened,auto& connections){
         connections.on(opened.action,[this](rules::BattleAction action){battle_action(action);});
         connections.on(opened.returned,[this]{finish_battle();});
@@ -35,7 +37,7 @@ void AdventureController::show_battle() {
 }
 void AdventureController::log_battle() const {
     if (!battle_) return;
-    report_(std::format("battle.state round={} active={} finished={}",battle_->round(),battle_->active_index(),battle_->finished()));
+    report_(std::format("battle.state round={} active={} move={} finished={}",battle_->round(),battle_->active_index(),battle_->movement_left(),battle_->finished()));
     for (std::size_t i=0;i<battle_->units().size();++i) {
         const auto& u=battle_->units()[i];report_(std::format("battle.unit id={} side={} slot={} at={},{} count={} hp={} name={}",i,u.side,u.slot,u.at.x,u.at.y,u.count(),u.hp,u.name));
     }
@@ -71,8 +73,6 @@ void AdventureController::finish_battle() {
     game_=std::move(*next);
     for (const auto [id,radius]:{std::pair{encounter_.attacker,ar},std::pair{encounter_.defender,dr}}) {
         if (!game_->army(id)) {
-            if (moves_) moves_->object_taken(id);
-            view_->map_window().remove_object(id);
             if (shroud_) shroud_->army_defeated(id,radius);
         }
     }
@@ -81,7 +81,12 @@ void AdventureController::finish_battle() {
     for (const auto& hero:game_->heroes()) if (hero.army==encounter_.attacker || hero.army==encounter_.defender)
         report_(std::format("battle.hero army={} slot={} xp={} level={}",hero.army,hero.slot,hero.experience,hero.level));
     battle_view_.close();battle_.reset();journey_=Journey{};path_.clear();
-    selected_=nullptr;select_first();show_heroes();present_map();
+    selected_=nullptr;show_map();
+    if (game_->army(encounter_.attacker)) {
+        select(&scenario_.map().actors()[encounter_.attacker]);
+        centre_on_actor(*selected_);
+    }
+    show_heroes();present_map();
     screens::BasicDialogContent content;content.title="Battle result";content.text=result;messages_.add(std::move(content),{});messages_.show();
 }
 }

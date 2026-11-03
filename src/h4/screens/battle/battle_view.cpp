@@ -11,11 +11,14 @@ constexpr graphics::Rgba ink{255,239,196,255}, gold{198,155,68,255}, dark{31,27,
 }
 BattleView::BattleView(core::Size frame,const formats::Font& font,const rules::Battle& battle,std::vector<const formats::Layer*> faces)
 :frame_{frame},font_{&font},battle_{&battle},faces_{std::move(faces)} {
-    tile_=std::max(24,std::min((frame.width-236)/rules::kBattleWidth,(frame.height-132)/rules::kBattleHeight));
+    tile_=std::max(24,std::min((frame.width-236)/rules::kBattleWidth,(frame.height-196)/rules::kBattleHeight));
     panel_=24+tile_*rules::kBattleWidth;refresh();
 }
 core::Rect BattleView::cell(core::Point at) const {return {{16+at.x*tile_,68+at.y*tile_},{tile_,tile_}};}
-core::Rect BattleView::button(int row) const {return {{panel_,frame_.height-176+row*56},{frame_.width-panel_-16,48}};}
+core::Rect BattleView::button(int row) const {
+    const int height=frame_.height<700?52:72,step=height+8;
+    return {{panel_,frame_.height-(3*step+16)+row*step},{frame_.width-panel_-16,height}};
+}
 void BattleView::refresh(std::string error) {
     pending_.reset();path_.clear();inspected_=battle_->active_index();
     words_=error.empty()?"Tap a cell or adjacent enemy, then Confirm. End turn when done.":std::move(error);
@@ -80,9 +83,9 @@ void BattleView::paint(const graphics::Canvas& c) const {
     } else label(std::format("{}\nExperience: {}",battle_->message(),battle_->experience_award(0)),{{panel_,68},{frame_.width-panel_-12,104}});
     if (inspected_>=0 && static_cast<std::size_t>(inspected_)<battle_->units().size()) {
         const auto& u=battle_->units()[static_cast<std::size_t>(inspected_)];
-        label(std::format("{}\nCount: {}\nHP: {} / {}\nAttack / Defense: {} / {}\nDamage: {}-{}\nSpeed: {}",u.name,u.count(),u.hp,static_cast<std::int64_t>(u.max_hp)*u.initial_count,u.attack,u.defense,u.damage_low,u.damage_high,u.speed),{{panel_,180},{frame_.width-panel_-12,270}});
+        label(std::format("{}\nCount: {}\nHP: {} / {}\nAttack / Defense: {} / {}\nDamage: {}-{}\nSpeed: {}",u.name,u.count(),u.hp,static_cast<std::int64_t>(u.max_hp)*u.initial_count,u.attack,u.defense,u.damage_low,u.damage_high,u.speed),{{panel_,180},{frame_.width-panel_-12,std::min(270,button(0).origin().y-192)}});
     }
-    label(words_,{{panel_,450},{frame_.width-panel_-12,std::max(30,frame_.height-640)}});
+    label(words_,{{20,frame_.height-116},{panel_-30,56}});
     for (int i=0;i<(battle_->finished()?1:3);++i) {
         const auto box=button(i);c.fill_rect(box,{91,63,29,255});c.stroke_rect(box,gold);
         const std::string caption=i==0?(battle_->finished()?"Return to map":pending_?"Confirm":"Choose action"):i==1?"End turn":"Surrender...";
