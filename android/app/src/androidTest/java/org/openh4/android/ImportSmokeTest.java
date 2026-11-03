@@ -5,7 +5,8 @@ import android.os.Bundle;
 import java.io.File;
 import java.nio.file.Files;
 public final class ImportSmokeTest extends Instrumentation {
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private boolean performance;
+    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); performance = arguments != null && "true".equals(arguments.getString("performance")); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
@@ -22,6 +23,22 @@ public final class ImportSmokeTest extends Instrumentation {
             String error = LauncherActivity.validateResources(dir.getAbsolutePath());
             if (error == null || !error.contains("header")) throw new AssertionError("Truncated H4R accepted: " + error);
             Files.delete(new File(dir, "heroes4.h4r").toPath()); Files.delete(dir.toPath());
+            if (performance) {
+                File report = new File(getTargetContext().getFilesDir(), "render-benchmark.json");
+                Files.deleteIfExists(report.toPath());
+                android.content.Intent intent = new android.content.Intent(getTargetContext(), GameActivity.class)
+                    .putExtra("renderBenchmark", true).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivitySync(intent);
+                long deadline = android.os.SystemClock.uptimeMillis() + 480000;
+                while (!report.isFile() && android.os.SystemClock.uptimeMillis() < deadline) Thread.sleep(200);
+                if (!report.isFile()) throw new AssertionError("Renderer benchmark timed out");
+                // Wait for the native writer to close before exposing the result.
+                Thread.sleep(300);
+                String json = Files.readString(report.toPath());
+                if (!json.startsWith("[")) throw new AssertionError("Benchmark: " + json);
+                result.putString("stream", "BENCHMARK " + json + "\nPASS: renderer benchmark\n");
+                finish(Activity.RESULT_OK, result); return;
+            }
             result.putString("stream", "PASS: resource whitelist, case normalization, native H4R rejection; combat mechanics and adventure settlement\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable e) {

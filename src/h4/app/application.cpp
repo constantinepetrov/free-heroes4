@@ -1,6 +1,7 @@
 #include "h4/app/application.hpp"
 
 #include <variant>
+#include "h4/core/performance.hpp"
 
 #include "h4/graphics/canvas.hpp"
 #include "h4/screens/shell/resolution.hpp"
@@ -37,12 +38,17 @@ void Application::resize_to_window() {
 }
 
 bool Application::step(std::chrono::milliseconds elapsed) {
+    core::perf::begin_frame();
+    { core::perf::Scope timing{core::perf::input};
     resize_to_window();
     if (!dispatch_input())
         return false;
-    advance(elapsed);
+    }
+    {core::perf::Scope timing{core::perf::update};advance(elapsed);}
     render();
-    return take_transition();
+    const bool running=take_transition();
+    core::perf::end_frame();
+    return running;
 }
 
 bool Application::dispatch_input() {
@@ -77,11 +83,13 @@ void Application::advance(std::chrono::milliseconds elapsed) {
 }
 
 void Application::render() {
+    {core::perf::Scope timing{core::perf::paint};
     frame_.fill(graphics::Color565{});
     const graphics::Canvas canvas{frame_};
     controller_->view().paint(canvas);
     if (help_)
         help_->paint(canvas);
+    }
     window_->present(frame_);
     update_cursor();
 }

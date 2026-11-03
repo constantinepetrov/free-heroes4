@@ -9,8 +9,8 @@ android {
         applicationId 'org.openh4.android'
         minSdk 30
         targetSdk 36
-        versionCode 2
-        versionName '0.2.0-combat-dev'
+        versionCode 3
+        versionName '0.2.1-performance'
         testInstrumentationRunner 'org.openh4.android.ImportSmokeTest'
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
         externalNativeBuild { cmake {
@@ -35,6 +35,16 @@ android {
             }
         }
     }
-    buildTypes { debug { debuggable true; if (signingPath) signingConfig signingConfigs.persistent } }
+    testBuildType project.findProperty('testBuildType') ?: 'debug'
+    buildTypes {
+        debug { debuggable true; if (signingPath) signingConfig signingConfigs.persistent }
+        release {
+            debuggable false
+            minifyEnabled false
+            if (signingPath) signingConfig signingConfigs.persistent
+            externalNativeBuild { cmake { arguments '-DCMAKE_BUILD_TYPE=RelWithDebInfo' } }
+            ndk { debugSymbolLevel 'SYMBOL_TABLE' }
+        }
+    }
     lint { abortOnError true; lintConfig file('../lint.xml') }
 }

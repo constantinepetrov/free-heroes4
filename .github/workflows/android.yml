@@ -9,6 +9,10 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [Debug, Release]
     env:
       SDL3_SOURCE_DIR: ${{ github.workspace }}/.deps/SDL
     steps:
@@ -41,10 +45,14 @@ jobs:
         env:
           OPENH4_KEYSTORE: ${{ runner.temp }}/openh4.p12
           OPENH4_KEYSTORE_PASSWORD: ${{ secrets.OPENH4_KEYSTORE_PASSWORD }}
-        run: gradle -p android --no-daemon --max-workers=2 assembleDebug assembleDebugAndroidTest lintDebug
+        run: |
+          variant='${{ matrix.variant }}'
+          lower=$(printf '%s' "$variant" | tr '[:upper:]' '[:lower:]')
+          gradle -p android --no-daemon --max-workers=2 -PtestBuildType="$lower" "assemble$variant" "assemble${variant}AndroidTest" "lint$variant"
+          python3 android/compiler_flags.py > android/app/build/compiler-flags.json
       - name: Verify public signing certificate
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk > android/app/build/signing.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/${{ matrix.variant == 'Debug' && 'debug' || 'release' }}/app-${{ matrix.variant == 'Debug' && 'debug' || 'release' }}.apk > android/app/build/signing.txt
           actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' android/app/build/signing.txt)
           test "$actual" = "$(cat android/signing-certificate.sha256)"
       - name: Remove temporary signing key
@@ -53,16 +61,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: OpenH4-native-debug-${{ github.sha }}
+          name: OpenH4-native-${{ matrix.variant }}-${{ github.sha }}
           path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/androidTest/debug/*.apk
-            android/app/build/reports/lint-results-debug.html
+            android/app/build/outputs/apk/**/*.apk
+            android/app/build/reports/lint-results-*.html
             android/app/build/signing.txt
+            android/app/build/compiler-flags.json
   smoke:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -75,23 +83,35 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - uses: actions/download-artifact@v4
         with:
-          name: OpenH4-native-debug-${{ github.sha }}
-          path: android/app/build
+          pattern: OpenH4-native-*-${{ github.sha }}
+          path: android/perf-builds
       - name: Enable emulator KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Emulator launch and native import rejection
+      - name: Compare Debug and Release on one cloud emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: 7.6in Foldable
+          ram-size: 4096M
+          cores: 2
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: bash android/smoke.sh
+          script: bash android/performance-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Android-diagnostics-${{ github.sha }}
+          name: Android-performance-${{ github.sha }}
           path: android/smoke-output/
+  native-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-14 ninja-build zlib1g-dev liblzma-dev
+      - run: cmake -S . -B build-tests -G Ninja -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DH4_BUILD_PLATFORM=OFF -DH4_WARNINGS_AS_ERRORS=OFF
+      - run: cmake --build build-tests --target h4-combat-tests h4-render-tests --parallel 2
+      - run: ctest --test-dir build-tests --output-on-failure

@@ -1,5 +1,5 @@
 if(ANDROID)
-  add_library(openh4 SHARED main.cpp first_boot.cpp android_import.cpp ../../tests/battle_cases.cpp)
+  add_library(openh4 SHARED main.cpp first_boot.cpp android_import.cpp ../../tests/battle_cases.cpp ../../tests/render_benchmark.cpp)
   set_target_properties(openh4 PROPERTIES OUTPUT_NAME main)
   target_include_directories(openh4 PRIVATE ${PROJECT_SOURCE_DIR}/src)
 else()

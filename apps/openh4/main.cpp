@@ -4,6 +4,12 @@
 #endif
 
 #include <cstdlib>
+#include <fstream>
+#include <stdexcept>
+#ifdef __ANDROID__
+#include "../../tests/render_benchmark.hpp"
+#endif
+#include "h4/core/performance.hpp"
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -45,7 +51,21 @@ int report(std::string_view stage, const h4::core::Error& error) {
 
 int main(int argc, char** argv) {
     using namespace h4;
+#ifdef __ANDROID__
+    core::perf::enable([](std::string_view s){SDL_Log("openh4.perf %s",std::string{s}.c_str());});
+#endif
 
+#ifdef __ANDROID__
+    if(argc==3 && std::string_view{argv[1]}=="--render-benchmark") {
+        try {
+            auto window=platform::sdl3::create_window("OpenH4 renderer benchmark",{1280,1024},{});
+            if(!window) throw std::runtime_error(window.error().message());
+            const auto json=tests::render_benchmark(**window);
+            std::ofstream out{argv[2]};out<<json;out.close();
+            SDL_Log("openh4.benchmark completed");return 0;
+        } catch(const std::exception& e){std::ofstream out{argv[2]};out<<"{\"error\":\"benchmark failed; see SDL log\"}";SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,"benchmark: %s",e.what());return 1;}
+    }
+#endif
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     const char* env    = std::getenv("H4_DATA_DIR");
     const auto options = app::LaunchOptions::parse(args, env);

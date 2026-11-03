@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <utility>
+#include "h4/core/performance.hpp"
 
 #include "h4/formats/font.hpp"
 #include "h4/graphics/canvas.hpp"
@@ -143,8 +144,10 @@ void MapWindow::on_click() {
 
 void MapWindow::draw(const graphics::Canvas& canvas) const {
     const graphics::Canvas window = canvas.child(core::Rect{{}, rect().size()});
-    if (renderer_)
+    if (renderer_) {
+        core::perf::Scope timing{core::perf::map};
         renderer_->paint(window, camera_, 0, clock_ms_);
+    }
     if (floating_font_ == nullptr)
         return;
     const graphics::TextStyle style{graphics::colors::white, graphics::colors::black};

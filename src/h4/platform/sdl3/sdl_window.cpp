@@ -1,6 +1,7 @@
 #include "h4/platform/sdl3/sdl_window.hpp"
 
 #include <SDL3/SDL.h>
+#include "h4/core/performance.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -177,8 +178,10 @@ public:
     void present(const graphics::Surface565& frame) override {
         if (!texture_)
             return;
-        if (frame.size() == logical_)
-            upload(frame);
+        {core::perf::Scope timing{core::perf::upload};
+        if (frame.size() == logical_) upload(frame);
+        }
+        core::perf::Scope timing{core::perf::present};
         SDL_SetRenderDrawColor(renderer_.get(), 0, 0, 0, 255);
         SDL_RenderClear(renderer_.get());
         SDL_RenderTexture(renderer_.get(), texture_.get(), nullptr, nullptr);

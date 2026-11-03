@@ -7,6 +7,8 @@ h4_module(core
     clock.hpp
     error.hpp
     geometry.hpp
+    performance.cpp
+    performance.hpp
     pending.hpp
     plain_text.hpp
     signal.hpp

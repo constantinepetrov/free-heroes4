@@ -1,4 +1,5 @@
 #include "h4/scene/map_render.hpp"
+#include "h4/core/performance.hpp"
 
 #include "h4/assets/assets.hpp"
 #include "h4/formats/terrain_texture.hpp"
@@ -97,6 +98,7 @@ void MapRenderer::paint(const graphics::Canvas& canvas, core::Point camera, std:
     const formats::ScenarioGrid& grid = map_->terrain();
     const std::int32_t width          = grid.width();
 
+    {core::perf::Scope timing{core::perf::terrain};
     for (std::int32_t x = 0; x < width; ++x) {
         const formats::GridSpan& span = grid.columns()[static_cast<std::size_t>(x)];
         for (std::int32_t y = span.start; y < span.stop; ++y) {
@@ -124,8 +126,9 @@ void MapRenderer::paint(const graphics::Canvas& canvas, core::Point camera, std:
     }
 
     paint_map_edges(inside, shroud_.texture(), grid, level, camera);
-    objects_.paint(inside, camera, level, shroud_.plane(), now);
-    shroud_.paint(inside, camera, level);
+    }
+    {core::perf::Scope timing{core::perf::objects};objects_.paint(inside, camera, level, shroud_.plane(), now);}
+    {core::perf::Scope timing{core::perf::shroud};shroud_.paint(inside, camera, level);}
 }
 
 core::Point MapRenderer::army_pin(core::Point cell, std::int32_t level, bool bridge) const {
