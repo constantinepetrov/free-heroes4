@@ -183,7 +183,7 @@ static void invoke(void) {
  NEXT API("IsBadCodePtr",1) value=h4_find_lifted(h4_arg(1))==NULL;
  NEXT API("OutputDebugStringA",1) void_log("guest: %s",h4_string(h4_arg(1)));
  NEXT API("ExitProcess",1) void_log("original ExitProcess(%u), caller %08x, API calls %llu",h4_arg(1),g_cur_func,(unsigned long long)api_calls);exit(h4_arg(1)?79:0);
- NEXT {if(h4_window_api(s,&value,&count)||h4_gdi_api(s,&value,&count)){finish(value,count);return;}void_log("unimplemented Win32 import %s from %08x (IAT %08x, calls %llu)",full,g_cur_func,active_iat,(unsigned long long)api_calls);exit(77);}
+ NEXT {if(h4_window_api(s,&value,&count)||h4_gdi_api(s,&value,&count)||h4_registry_api(s,&value,&count)){finish(value,count);return;}void_log("unimplemented Win32 import %s from %08x (IAT %08x, calls %llu)",full,g_cur_func,active_iat,(unsigned long long)api_calls);exit(77);}
 #undef API
 #undef NEXT
  (void)b;(void)c;(void)d;finish(value,count);
@@ -211,6 +211,7 @@ uint32_t h4_test_api(const char *name,unsigned count,...) {
  active_import=name;invoke();assert(g_esp==sp+4*(count+1));g_esp=sp;return g_eax;
 }
 void h4_test_version(void);
+void h4_test_registry(int read_only);
 void h4_test_ddraw(void);
 static void window_selftest(void) {
  uint32_t wc=void_galloc(48),name=void_gstrdup("SyntheticH4Window"),rect=void_galloc(28);
@@ -244,11 +245,12 @@ static void selftest(void) {
  uint32_t cs=void_galloc(24);h4_test_api("KERNEL32.dll!InitializeCriticalSection",1,cs);h4_test_api("KERNEL32.dll!EnterCriticalSection",1,cs);h4_test_api("KERNEL32.dll!EnterCriticalSection",1,cs);assert(MEM32(cs+8)==2&&MEM32(cs+12)==1);h4_test_api("KERNEL32.dll!LeaveCriticalSection",1,cs);h4_test_api("KERNEL32.dll!LeaveCriticalSection",1,cs);assert(!MEM32(cs+12)&&MEM32(cs+4)==0xffffffff);h4_test_api("KERNEL32.dll!DeleteCriticalSection",1,cs);void_gfree(cs);
  assert(!void_vm_alloc(0xfffff000,0x10000,0x3000,4));assert(!void_vm_free(0xfffff000,0x10000,0x4000));assert(!void_vm_protect(0xfffff000,0x10000,4,&old));
  uint32_t text=void_galloc(16),out=void_galloc(32);MEM8(text)=0xdf;MEM8(text+1)=0;assert(h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,16u)==2&&MEM16(out)==0x42f&&!MEM16(out+2));assert(h4_test_api("KERNEL32.dll!WideCharToMultiByte",8,1251u,0u,out,0xffffffffu,text,16u,0u,0u)==2&&MEM8(text)==0xdf);assert(!h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,1u)&&last_error==122);MEM16(text)='A';MEM16(text+2)=' ';MEM16(text+4)=0;assert(h4_test_api("KERNEL32.dll!GetStringTypeW",4,1u,text,0xffffffffu,out));assert(MEM16(out)==0x381&&MEM16(out+2)==0x248&&MEM16(out+4)==0x20);assert(h4_test_api("KERNEL32.dll!LCMapStringW",6,0x409u,0x100u,text,0xffffffffu,out,16u)==3&&MEM16(out)=='a');void_gfree(text);void_gfree(out);
- h4_test_version();window_selftest();
+ h4_test_version();window_selftest();h4_test_registry(0);
  puts("PASS guest heap, VM, TLS, event, mutex, critical section, CP1251/1252, CTYPE1 and stdcall tests");
 }
 int main(int argc,char **argv) {
  if(argc!=2&&argc!=3){fputs("usage: bootstrap --selftest | image.bin\n",stderr);return 2;}init();if(!strcmp(argv[1],"--selftest")){selftesting=1;selftest();return 0;}
+ if(!strcmp(argv[1],"--registry-read-test")){h4_test_registry(1);return 0;}
  if(!strcmp(argv[1],"--unknown-api")){active_import="KERNEL32.dll!UnsupportedSyntheticAPI";invoke();return 3;}
  if(!strcmp(argv[1],"--blocking-wait")){object_wait(object_create(1,0,0,0),0xffffffff);return 3;}
  if(!void_vm_claim(H4_IMAGE_BASE,H4_IMAGE_SIZE,4))void_fatal("image allocation failed");

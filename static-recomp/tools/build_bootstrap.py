@@ -14,7 +14,7 @@ for i,m in enumerate(matches):
 (cache/'all_functions.h').write_text('\n'.join(f'void sub_{m[1]}(void);' for m in matches)+'\n')
 prefix='#include "recomp_types.h"\n#include "all_functions.h"\n'
 sources={f'chunk-{k:04x}':prefix+'\n'.join(v) for k,v in groups.items()};sources['dispatch']=prefix+code[last:]
-for name in ['poc_runtime','guest_memory','guest_strings','pe_version','version_selftest','win32_window','ddraw_com','ddraw_selftest','gdi','gdi_selftest','bootstrap']:sources[name]=(r/f'static-recomp/native/{name}.c').read_text()
+for name in ['poc_runtime','guest_memory','guest_strings','pe_version','version_selftest','win32_window','ddraw_com','ddraw_selftest','gdi','gdi_selftest','registry','registry_selftest','bootstrap']:sources[name]=(r/f'static-recomp/native/{name}.c').read_text()
 sources['surface_bridge_cpp']=(r/'static-recomp/native/surface_bridge.cpp').read_text()
 sources['ddraw_surface_cpp']=(r/'static-recomp/native/ddraw_surface.cpp').read_text()
 sources['surface565_cpp']=(r/'src/h4/graphics/surface565.cpp').read_text()
