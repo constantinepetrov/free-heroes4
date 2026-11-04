@@ -10,6 +10,7 @@
 static uint32_t last_error, tls_value[1088], exception_filter;
 static unsigned char tls_used[1088];
 static unsigned timer_period_refs[1001];
+static unsigned com_refs,com_mode;
 static const char *active_import;
 static uint32_t active_iat;
 static uint64_t api_calls,original_entries;
@@ -123,10 +124,18 @@ static void invoke(void) {
  const char *full=active_import,*s=strchr(full,'!');s=s?s+1:full;
  uint32_t a,b,c,d,value=0;unsigned count=0;
  ++api_calls;
+ if(!strcasecmp(full,"DSOUND.dll!ordinal_1")||!strcasecmp(full,"DSOUND.dll!DirectSoundCreate")){h4_need(h4_arg(2),4,1);MEM32(h4_arg(2))=0;void_log("DirectSound backend unavailable: returning DSERR_NODRIVER, no fake device");finish(0x88780078u,3);return;}
+
  if(getenv("H4_TRACE_API"))void_log("API %s from %08x esp=%08x",full,g_cur_func,g_esp);
 #define API(name,n) if(!strcmp(s,name)) {count=n;
 #define NEXT } else
  API("GetVersion",0) value=0x0a280105;
+ NEXT API("_BinkSetSoundSystem@8",2) void_log("Bink audio unavailable: returning initialization failure");value=0;
+ NEXT API("_BinkSetSoundTrack@4",1) void_log("Bink optional soundtrack selection %u (no decoder active)",h4_arg(1));
+ NEXT API("_BinkOpen@8",2) void_log("Bink decoder unavailable: returning NULL for optional intro (flags=%08x)",h4_arg(2));value=0;
+ NEXT API("CoInitializeEx",2) a=h4_arg(2)&2u;if(h4_arg(1)||(h4_arg(2)&~14u))value=0x80070057;else if(com_refs&&a!=com_mode)value=0x80010106;else{value=com_refs?1:0;com_refs++;com_mode=a;}
+ NEXT API("CoUninitialize",0) if(com_refs)--com_refs;
+ NEXT API("CoCreateInstance",5) h4_need(h4_arg(1),16,0);h4_need(h4_arg(4),16,0);h4_need(h4_arg(5),4,1);MEM32(h4_arg(5))=0;void_log("COM class not registered in this host: %08x-%08x-%08x-%08x",MEM32(h4_arg(1)),MEM32(h4_arg(1)+4),MEM32(h4_arg(1)+8),MEM32(h4_arg(1)+12));value=0x80040154;
  NEXT API("MessageBoxA",4) void_log("original MessageBoxA flags=%08x title=%s text=%s",h4_arg(4),h4_arg(3)?h4_string(h4_arg(3)):"",h4_arg(2)?h4_string(h4_arg(2)):"");void_log("stopping before dialog response; no success is simulated");exit(77);
  NEXT API("RaiseException",4) void_log("original RaiseException code=%08x flags=%08x nargs=%u args=%08x caller=%08x",h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4),g_cur_func);if(h4_arg(3)<=15&&h4_arg(4)){h4_need(h4_arg(4),h4_arg(3)*4,0);for(unsigned i=0;i<h4_arg(3);i++)void_log("exception arg[%u]=%08x",i,MEM32(h4_arg(4)+4*i));}void_log("SEH dispatch is not implemented; stopping instead of reporting success");exit(77);
  NEXT API("DirectDrawCreateEx",4) value=h4_directdraw_create(h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4));
@@ -237,16 +246,21 @@ void h4_test_registry(int read_only);
 void h4_test_files(void);
 void h4_test_menu_setup(uint32_t wc);
 void h4_test_menu(uint32_t window);
+void h4_test_push_key_pair(void);
 void h4_test_ddraw(void);
 static void window_selftest(void) {
- uint32_t wc=void_galloc(48),name=void_gstrdup("SyntheticH4Window"),rect=void_galloc(28);
+ uint32_t wc=void_galloc(48),name=void_gstrdup("SyntheticH4Window"),rect=void_galloc(96);
  h4_test_menu_setup(wc);MEM32(wc)=48;MEM32(wc+8)=0xdfff0000;MEM32(wc+40)=name;
  uint32_t atom=h4_test_api("USER32.dll!RegisterClassExA",1,wc);assert(atom);assert(!h4_test_api("USER32.dll!RegisterClassExA",1,wc));
  uint32_t win=h4_test_api("USER32.dll!CreateWindowExA",12,0u,atom,name,0u,0u,0u,320u,200u,0u,0u,H4_IMAGE_BASE,0u);assert(win==0x50000001&&callback_tests==2);h4_test_menu(win);
+ MEM32(rect)=12;MEM32(rect+4)=34;assert(h4_test_api("USER32.dll!ClientToScreen",2,win,rect)&&MEM32(rect)==12&&MEM32(rect+4)==34);assert(h4_test_api("USER32.dll!BeginPaint",2,win,rect)==0x51000000&&MEM32(rect+16)==320&&MEM32(rect+20)==200);assert(h4_test_api("USER32.dll!EndPaint",2,win,rect));assert(h4_test_api("USER32.dll!GetCursorPos",1,rect));assert(!h4_test_api("USER32.dll!GetKeyState",1,0x1bu));
  assert(h4_test_api("USER32.dll!GetClientRect",2,win,rect)&&MEM32(rect+8)==320&&MEM32(rect+12)==200);
  assert(!h4_test_api("USER32.dll!SetWindowLongA",3,win,0xffffffebu,42u));assert(h4_test_api("USER32.dll!SetWindowLongA",3,win,0xffffffebu,0u)==42);
  h4_test_api("USER32.dll!ShowWindow",2,win,1u);assert(h4_test_api("USER32.dll!GetActiveWindow",0)==win);
+ assert(!h4_test_api("USER32.dll!MsgWaitForMultipleObjects",5,0u,0u,0u,0u,0xffu));
  unsigned messages=0;while(h4_test_api("USER32.dll!PeekMessageA",5,rect,0u,0u,0u,1u)){assert(++messages<128);h4_test_api("USER32.dll!DispatchMessageA",1,rect);}
+ unsigned key_messages=0;h4_test_push_key_pair();while(h4_test_api("USER32.dll!PeekMessageA",5,rect,0u,0u,0u,1u)){uint32_t msg=MEM32(rect+4);if(msg==0x100||msg==0x101){assert(MEM32(rect+8)==0x1b);assert(h4_test_api("USER32.dll!GetKeyState",1,0x1bu)==(msg==0x100?0x8000u:0));key_messages++;}h4_test_api("USER32.dll!DispatchMessageA",1,rect);}assert(key_messages==2);
+ assert(h4_test_api("USER32.dll!MsgWaitForMultipleObjects",5,0u,0u,0u,0u,0xffu)==258);
  assert(messages>=3&&callback_tests>=5);h4_test_ddraw();assert(h4_test_api("USER32.dll!DestroyWindow",1,win));assert(!h4_test_api("USER32.dll!GetClientRect",2,win,rect));
  assert(void_vm_free(H4_IMAGE_BASE,0,0x8000));void_gfree(wc);void_gfree(name);void_gfree(rect);puts("PASS SDL window, messages and synthetic x86 stdcall callbacks");
 }
@@ -270,6 +284,8 @@ static void selftest(void) {
  uint32_t cs=void_galloc(24);h4_test_api("KERNEL32.dll!InitializeCriticalSection",1,cs);h4_test_api("KERNEL32.dll!EnterCriticalSection",1,cs);h4_test_api("KERNEL32.dll!EnterCriticalSection",1,cs);assert(MEM32(cs+8)==2&&MEM32(cs+12)==1);h4_test_api("KERNEL32.dll!LeaveCriticalSection",1,cs);h4_test_api("KERNEL32.dll!LeaveCriticalSection",1,cs);assert(!MEM32(cs+12)&&MEM32(cs+4)==0xffffffff);h4_test_api("KERNEL32.dll!DeleteCriticalSection",1,cs);void_gfree(cs);
  assert(!void_vm_alloc(0xfffff000,0x10000,0x3000,4));assert(!void_vm_free(0xfffff000,0x10000,0x4000));assert(!void_vm_protect(0xfffff000,0x10000,4,&old));
  uint32_t text=void_galloc(16),out=void_galloc(32);MEM8(text)=0xdf;MEM8(text+1)=0;assert(h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,16u)==2&&MEM16(out)==0x42f&&!MEM16(out+2));assert(h4_test_api("KERNEL32.dll!WideCharToMultiByte",8,1251u,0u,out,0xffffffffu,text,16u,0u,0u)==2&&MEM8(text)==0xdf);assert(!h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,1u)&&last_error==122);MEM16(text)='A';MEM16(text+2)=' ';MEM16(text+4)=0;assert(h4_test_api("KERNEL32.dll!GetStringTypeW",4,1u,text,0xffffffffu,out));assert(MEM16(out)==0x381&&MEM16(out+2)==0x248&&MEM16(out+4)==0x20);assert(h4_test_api("KERNEL32.dll!LCMapStringW",6,0x409u,0x100u,text,0xffffffffu,out,16u)==3&&MEM16(out)=='a');void_gfree(text);void_gfree(out);
+ assert(!h4_test_api("ole32.dll!CoInitializeEx",2,0u,2u));assert(h4_test_api("ole32.dll!CoInitializeEx",2,0u,2u)==1);assert(h4_test_api("ole32.dll!CoInitializeEx",2,0u,0u)==0x80010106);h4_test_api("ole32.dll!CoUninitialize",0);h4_test_api("ole32.dll!CoUninitialize",0);
+ uint32_t audio_out=void_galloc(4);MEM32(audio_out)=0xffffffffu;assert(h4_test_api("DSOUND.dll!ordinal_1",3,0u,audio_out,0u)==0x88780078u&&!MEM32(audio_out));void_gfree(audio_out);assert(!h4_test_api("binkw32.dll!_BinkSetSoundSystem@8",2,0u,0u));assert(!h4_test_api("binkw32.dll!_BinkOpen@8",2,0u,0u));
  uint32_t env_name=void_gstrdup("H4_STATE_DIR"),env_value=void_gstrdup("C:\\Different"),env_out=void_galloc(64);const char *host_state=getenv("H4_STATE_DIR");assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,env_value));assert(getenv("H4_STATE_DIR")==host_state);assert(h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u)==12&&!strcmp(GPTR(env_out),"C:\\Different"));uint32_t block=h4_test_api("KERNEL32.dll!GetEnvironmentStringsW",0);assert(block&&MEM16(block)=='H');assert(h4_test_api("KERNEL32.dll!FreeEnvironmentStringsW",1,block));assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,0u));assert(!h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u));void_gfree(env_name);void_gfree(env_value);void_gfree(env_out);
  h4_test_version();window_selftest();h4_test_registry(0);h4_test_files();
  puts("PASS guest heap, VM, TLS, event, mutex, critical section, CP1251/1252, CTYPE1 and stdcall tests");

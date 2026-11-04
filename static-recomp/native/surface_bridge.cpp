@@ -16,7 +16,15 @@ static SDL_Texture *texture;
 static SDL_Window *render_window;
 static int tw,th;
 static unsigned frames;
-static bool captured;
+static bool capture_registered;
+static Uint64 last_capture;
+static h4::graphics::Surface565 last_frame;
+static void save_capture(){
+ const char *path=std::getenv("H4_FRAME_OUTPUT");if(!path||last_frame.empty())return;
+ auto size=last_frame.size();SDL_Surface *out=SDL_CreateSurfaceFrom(size.width,size.height,SDL_PIXELFORMAT_RGB565,const_cast<uint16_t*>(last_frame.bits().data()),size.width*2);
+ if(!out||!SDL_SaveBMP(out,path))std::fprintf(stderr,"Capture failed: %s\n",SDL_GetError());
+ if(out)SDL_DestroySurface(out);
+}
 #define TRY try
 #define FAIL catch(const std::exception& e){error=e.what();return 0;}
 extern "C" void *h4_surface_new(int w,int h,int bits){TRY{return new Surface(w,h,bits);}FAIL}
@@ -35,6 +43,6 @@ extern "C" int h4_surface_present(void *p,void *win){TRY{
  if(!texture||tw!=size.width||th!=size.height){if(texture)SDL_DestroyTexture(texture);texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGB565,SDL_TEXTUREACCESS_STREAMING,size.width,size.height);if(!texture)throw std::runtime_error(SDL_GetError());tw=size.width;th=size.height;SDL_SetRenderLogicalPresentation(renderer,tw,th,SDL_LOGICAL_PRESENTATION_LETTERBOX);}
  if(!SDL_UpdateTexture(texture,nullptr,frame.bits().data(),tw*2)||!SDL_RenderClear(renderer)||!SDL_RenderTexture(renderer,texture,nullptr,nullptr)||!SDL_RenderPresent(renderer))throw std::runtime_error(SDL_GetError());
  ++frames;if(frames<=3)std::fprintf(stderr,"DirectDraw present %u: %dx%d, guest surface pixels\n",frames,tw,th);
- const char *capture=std::getenv("H4_FRAME_OUTPUT");if(capture&&!captured){unsigned nonzero=0;bool different=false;auto first=frame.bits()[0];for(auto pixel:frame.bits()){nonzero+=pixel!=0;different|=pixel!=first;}if(nonzero>256&&different){SDL_Surface *out=SDL_CreateSurfaceFrom(tw,th,SDL_PIXELFORMAT_RGB565,const_cast<uint16_t*>(frame.bits().data()),tw*2);if(!out||!SDL_SaveBMP(out,capture)){if(out)SDL_DestroySurface(out);throw std::runtime_error(SDL_GetError());}SDL_DestroySurface(out);captured=true;std::fprintf(stderr,"Captured nonuniform guest frame: %s (%u nonzero pixels)\n",capture,nonzero);}}
+ const char *capture=std::getenv("H4_FRAME_OUTPUT");if(capture){unsigned nonzero=0;bool different=false;auto first=frame.bits()[0];for(auto pixel:frame.bits()){nonzero+=pixel!=0;different|=pixel!=first;}if(nonzero>256&&different){last_frame=std::move(frame);if(!capture_registered){std::atexit(save_capture);capture_registered=true;std::fprintf(stderr,"Captured nonuniform guest frame: %s (%u nonzero pixels)\n",capture,nonzero);}Uint64 now=SDL_GetTicks();if(!last_capture||now-last_capture>=500){save_capture();last_capture=now;}}}
  return 1;
  }FAIL}

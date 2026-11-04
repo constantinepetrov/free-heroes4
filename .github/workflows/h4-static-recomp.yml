@@ -66,6 +66,11 @@ jobs:
           export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
           python static-recomp/tools/build_bootstrap.py --h5 "$RUNNER_TEMP/h5" --lifted "$RUNNER_TEMP/lifted" --output "$RUNNER_TEMP/bootstrap-arm64"
           python static-recomp/tests/bootstrap_checks.py "$RUNNER_TEMP/bootstrap-arm64" "$RUNNER_TEMP/fixture/image.bin" | tee "$RUNNER_TEMP/bootstrap-tests.txt"
+      - name: Bounded progressive function discovery with own PE
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/sdl-install/lib/pkgconfig"
+          export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+          python static-recomp/tests/progressive_lift.py "$RUNNER_TEMP/fixture" "$RUNNER_TEMP/h5" "$RUNNER_TEMP/progressive"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
