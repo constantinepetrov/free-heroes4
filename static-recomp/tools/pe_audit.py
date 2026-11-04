@@ -4,6 +4,7 @@ import pefile
 ap=argparse.ArgumentParser();ap.add_argument("directory",type=pathlib.Path);ap.add_argument("output",type=pathlib.Path);args=ap.parse_args()
 repo=pathlib.Path(__file__).resolve().parents[2]
 if args.output.resolve()==repo or repo in args.output.resolve().parents:ap.error("Keep private audit data outside Git")
+if args.output.resolve() in {p.resolve() for p in args.directory.iterdir() if p.is_file()}:ap.error("Audit output would overwrite an input file")
 rows=[]
 for path in sorted(args.directory.iterdir()):
     if path.name.startswith("._") or path.suffix.lower() not in [".exe",".dll",".asi"]:continue

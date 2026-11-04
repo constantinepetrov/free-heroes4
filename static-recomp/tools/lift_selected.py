@@ -7,6 +7,7 @@ def main():
     ap.add_argument("--exe",type=pathlib.Path,required=True);ap.add_argument("--manifest",type=pathlib.Path,required=True)
     ap.add_argument("--output",type=pathlib.Path,required=True);ap.add_argument("--synthetic",action="store_true")
     args=ap.parse_args();repo=pathlib.Path(__file__).resolve().parents[2];out=args.output.resolve()
+    if {args.exe.resolve(),args.manifest.resolve()} & {out/"lifted.c",out/"runtime_config.h",out/"lift-summary.json"}:ap.error("Generated output would overwrite an input file")
     if out==repo or repo in out.parents:ap.error("Output must be outside this Git checkout")
     if os.environ.get("GITHUB_ACTIONS")=="true" and not args.synthetic:ap.error("CI accepts synthetic input only")
     revision=subprocess.check_output(["git","-C",str(args.h5),"rev-parse","HEAD"],text=True).strip()

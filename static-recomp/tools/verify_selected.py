@@ -8,6 +8,7 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument("--h5",type=pathlib.Path,required=True);ap.add_argument("--exe",type=pathlib.Path,required=True)
     ap.add_argument("--manifest",type=pathlib.Path,required=True);ap.add_argument("--native",type=pathlib.Path,required=True)
     ap.add_argument("--result",type=pathlib.Path,required=True);args=ap.parse_args()
+    if args.result.resolve() in {args.exe.resolve(),args.manifest.resolve(),args.native.resolve()}:ap.error("Result output would overwrite an input file")
     m=json.loads(args.manifest.read_text());repo=pathlib.Path(__file__).resolve().parents[2]
     if args.result.resolve()==repo or repo in args.result.resolve().parents:ap.error("Result must stay outside Git")
     if os.environ.get("GITHUB_ACTIONS")=="true" and not m.get("synthetic"):ap.error("Only synthetic input is allowed in CI")

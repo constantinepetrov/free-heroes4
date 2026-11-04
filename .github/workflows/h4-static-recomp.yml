@@ -35,6 +35,8 @@ jobs:
           clang -O2 -fwrapv -fno-strict-aliasing -ffp-contract=off -DRECOMP_GENERATED_CODE -DRECOMP_TRACE -include "$RUNNER_TEMP/lifted/runtime_config.h" -I"$RUNNER_TEMP/h5/android/runtime" "$RUNNER_TEMP/lifted/lifted.c" static-recomp/native/poc_runtime.c -lm -o "$RUNNER_TEMP/synthetic-arm64"
           file "$RUNNER_TEMP/synthetic-arm64"
           python static-recomp/tools/verify_selected.py --h5 "$RUNNER_TEMP/h5" --exe "$RUNNER_TEMP/fixture/synthetic.pe" --manifest "$RUNNER_TEMP/fixture/manifest.json" --native "$RUNNER_TEMP/synthetic-arm64" --result "$RUNNER_TEMP/synthetic-results.json"
+      - name: Input preservation
+        run: python static-recomp/tests/input_safety.py "$RUNNER_TEMP/fixture" "$RUNNER_TEMP/h5" "$RUNNER_TEMP/synthetic-arm64"
       - name: Startup refuses an unimplemented Win32 API
         run: |
           set +e
