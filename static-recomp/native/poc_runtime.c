@@ -18,11 +18,14 @@ static void get_error(void){g_eax=last_error;g_esp+=4;}
 static void get_tls(void){if(MEM32(g_esp+4)!=0){fputs("unexpected TLS index\n",stderr);exit(3);}g_eax=0x01001000;g_esp+=8;}
 static void set_error(void){last_error=MEM32(g_esp+4);g_esp+=8;}
 #ifdef H4_HAS_STARTUP
-static void get_version(void){fputs("original startup reached GetVersion\n",stderr);g_eax=0x0a280105;g_esp+=4;}
+static void get_version(void){fputs("guest startup reached GetVersion\n",stderr);g_eax=0x0a280105;g_esp+=4;}
 #endif
 recomp_func_t void_resolve(uint32_t va){
 #ifdef H4_HAS_STARTUP
  if(va==0xf000000c)return get_version;
+ if(va>=0xe0000000u && (va-0xe0000000u)/4<H4_IMPORT_COUNT){
+  fprintf(stderr,"unimplemented Win32 import %s from %08x\n",h4_import_names[(va-0xe0000000u)/4].name,g_cur_func);exit(77);
+ }
 #endif
 switch(va){case 0xf0000000:return get_error;case 0xf0000004:return get_tls;case 0xf0000008:return set_error;default:fprintf(stderr,"unsupported dispatch %08x from %08x\n",va,g_cur_func);exit(77);}}
 void void_lift_trap(uint32_t va,const char* reason){fprintf(stderr,"lift trap %08x: %s\n",va,reason);exit(78);}
@@ -39,6 +42,7 @@ int main(int argc,char** argv){
   FILE* image=fopen(argv[2],"rb");if(!image){perror("image");return 2;}
   size_t loaded=fread((void*)(VOID_GUEST_BASE+0x400000),1,0xe00000,image);
   if(ferror(image)||!feof(image)||loaded<0x200){fclose(image);return 2;}fclose(image);
+  for(uint32_t i=0;i<H4_IMPORT_COUNT;i++)MEM32(h4_import_names[i].iat)=0xe0000000u+4*i;
   MEM32(H4_GET_VERSION)=0xf000000c;g_fs_base=0x01003000;MEM32(g_fs_base)=0xffffffff;
   g_esp=0x01010000;MEM32(g_esp)=0;h4_startup();fputs("startup returned\n",stderr);return 0;
  }

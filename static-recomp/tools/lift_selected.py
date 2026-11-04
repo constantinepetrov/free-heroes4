@@ -40,7 +40,12 @@ def main():
     for name,value in manifest["iat"].items():
         if not name.isidentifier():raise ValueError("Invalid IAT macro")
         config.append(f"#define H4_{name.upper()} {int(value,0):#x}u")
-    if "startup" in named:config.append("#define H4_HAS_STARTUP 1")
+    if "startup" in named:
+        config.append("#define H4_HAS_STARTUP 1")
+        config.append("struct h4_import_name {uint32_t iat; const char* name;};")
+        entries=["{%#xu, %s}"%(va,json.dumps(dll+"!"+symbol)) for va,(dll,symbol) in sorted(iat.items())]
+        config.append("static const struct h4_import_name h4_import_names[] = {"+",".join(entries or ["{0,(const char*)0}"])+"};")
+        config.append(f"#define H4_IMPORT_COUNT {len(entries)}u")
     if "x87" in named:config.append("#define H4_HAS_X87 1")
     for name in named:config.append(f"void h4_{name}(void);")
     (out/"runtime_config.h").write_text("\n".join(config)+"\n")

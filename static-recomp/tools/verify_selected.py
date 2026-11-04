@@ -60,6 +60,6 @@ def main():
             if native!=reference:raise AssertionError((mode,seed,n,native,reference))
             if u.reg_read(UC_X86_REG_ESP)!=0x1010004 or last_error!=0x12345678:raise AssertionError("x86 ABI mismatch")
         counts[mode]=len(vectors)
-    result={"sha256":m["sha256"],"synthetic":m.get("synthetic",False),"native_machine":subprocess.check_output(["uname","-m"],text=True).strip(),"platform":sys.platform,"passed":counts,"total":sum(counts.values()),"oracle":"bounded original x86 instructions in Unicorn","limitations":["preallocated TLS only","selected functions only; no WinMain/menu/scenario"]}
+    result={"sha256":m["sha256"],"synthetic":m.get("synthetic",False),"native_machine":subprocess.check_output(["uname","-m"],text=True).strip(),"platform":sys.platform,"passed":counts,"total":sum(counts.values()),"oracle":"input x86 instructions in bounded Unicorn","limitations":["preallocated TLS only","selected functions only; no WinMain/menu/scenario"]}
     args.result.write_text(json.dumps(result,indent=2)+"\n");print(json.dumps(result))
 if __name__=="__main__":main()
