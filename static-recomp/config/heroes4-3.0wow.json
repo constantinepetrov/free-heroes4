@@ -1,0 +1,19 @@
+{
+  "sha256": "04ab08dd8e8e1430b88331e7b2c6e3dc1ed450837ba285ce76fe5f752b7f907e",
+  "synthetic": false,
+  "functions": {
+    "rng": "0x437040",
+    "crt_rand": "0x8dffdf",
+    "thread_data": "0x8e44c3",
+    "shuffle": "0x796b30",
+    "startup": "0x8e3981",
+    "heap_init": "0x8e96a5"
+  },
+  "iat": {
+    "get_error": "0x9700a8",
+    "get_tls": "0x970048",
+    "set_error": "0x97017c",
+    "tls_index": "0xa89560",
+    "get_version": "0x970108"
+  }
+}

@@ -12,6 +12,10 @@ int main(int argc,char** argv){try{
  a.blt({1,0},b,{{0,0},{1,1}});check(a.frame().at({1,0}).bits()==0xf800,"Lock/Blt pixel");
  a.blt({0,1},a,{{0,0},{3,1}});check(a.frame().at({1,1}).bits()==0xf800,"Self blit snapshot");
  b.fill({{},b.size()},0x07e0);a.flip(b);check(a.frame().at({2,1}).bits()==0x07e0&&b.frame().at({1,0}).bits()==0xf800,"Flip exchanges backing");
+ recomp::DDrawSurface clipped{3,2,16};clipped.blt({-1,0},b,{{0,0},{3,1}});
+ check(clipped.frame().at({0,0}).bits()==0xf800&&clipped.frame().at({1,0}).bits()==0x1234&&clipped.frame().at({2,0}).bits()==0,"Destination clipping");
+ clipped.fill({{},clipped.size()},0);clipped.blt({0,0},b,{{-1,0},{3,1}});
+ check(clipped.frame().at({0,0}).bits()==0&&clipped.frame().at({1,0}).bits()==0x1234&&clipped.frame().at({2,0}).bits()==0xf800,"Source clipping offset");
  recomp::DDrawSurface pal{3,2,8};check(pal.pitch()==4,"Indexed pitch");pal.palette(1,255,0,0);pal.fill({{},pal.size()},1);
  check(pal.frame().at({2,1}).bits()==0xf800,"Palette to RGB565");
  recomp::DDrawSurface indexed{3,2,8};indexed.fill({{},indexed.size()},2);indexed.blt({-1,0},pal,{{0,0},{3,2}},1);
