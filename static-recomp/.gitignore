@@ -1,0 +1,13 @@
+private/
+build/
+__pycache__/
+*.pe
+*.exe
+*.dll
+*.asi
+*.bin
+*.o
+*.so
+*.dylib
+*.apk
+generated/

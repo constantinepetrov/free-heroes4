@@ -1,0 +1,81 @@
+name: H4 static recompilation POC
+on:
+  push:
+    branches: [codex/h4-static-recomp-poc]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  arm64-synthetic:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Native ARM64 and public-input guard
+        run: |
+          test "$(uname -m)" = aarch64
+          python3 - <<'PYGUARD'
+          import subprocess,pathlib
+          paths=subprocess.check_output(['git','ls-files','static-recomp'],text=True).splitlines()
+          forbidden={'.exe','.dll','.asi','.bin','.pe','.so','.dylib','.apk','.o'}
+          assert all(pathlib.Path(p).suffix not in forbidden for p in paths)
+          PYGUARD
+      - name: Pinned open lifter and test dependencies
+        run: |
+          git clone --depth 1 --branch v0.3.2-dev https://github.com/phys-winner/pc_decomp_homm5.git "$RUNNER_TEMP/h5"
+          test "$(git -C "$RUNNER_TEMP/h5" rev-parse HEAD)" = 6dc7914d7529d92beaf323c0f88a5102b4d0fd69
+          python -m pip install -r static-recomp/requirements.txt
+      - name: Lift own synthetic PE32 and run natively on ARM64
+        run: |
+          python static-recomp/tests/make_fixture.py "$RUNNER_TEMP/fixture"
+          python static-recomp/tools/lift_selected.py --h5 "$RUNNER_TEMP/h5" --exe "$RUNNER_TEMP/fixture/synthetic.pe" --manifest "$RUNNER_TEMP/fixture/manifest.json" --output "$RUNNER_TEMP/lifted" --synthetic
+          clang -O2 -fwrapv -fno-strict-aliasing -ffp-contract=off -DRECOMP_GENERATED_CODE -DRECOMP_TRACE -include "$RUNNER_TEMP/lifted/runtime_config.h" -I"$RUNNER_TEMP/h5/android/runtime" "$RUNNER_TEMP/lifted/lifted.c" static-recomp/native/poc_runtime.c -lm -o "$RUNNER_TEMP/synthetic-arm64"
+          file "$RUNNER_TEMP/synthetic-arm64"
+          python static-recomp/tools/verify_selected.py --h5 "$RUNNER_TEMP/h5" --exe "$RUNNER_TEMP/fixture/synthetic.pe" --manifest "$RUNNER_TEMP/fixture/manifest.json" --native "$RUNNER_TEMP/synthetic-arm64" --result "$RUNNER_TEMP/synthetic-results.json"
+      - name: DirectDraw surface and SDL3 presentation tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 ninja-build zlib1g-dev liblzma-dev
+          cmake -S . -B "$RUNNER_TEMP/ddraw-build" -G Ninja -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DH4_WARNINGS_AS_ERRORS=OFF -DH4_BUILD_STATIC_RECOMP_POC=ON -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+          cmake --build "$RUNNER_TEMP/ddraw-build" --target h4-ddraw-poc-test --parallel 2
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$RUNNER_TEMP/ddraw-build/static-recomp/h4-ddraw-poc-test" --sdl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-arm64-results
+          path: |
+            ${{ runner.temp }}/synthetic-results.json
+            ${{ runner.temp }}/lifted/lift-summary.json
+  android-arm64-toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Build only synthetic ARM64 Android executable
+        run: |
+          sdkmanager 'ndk;29.0.14206865'
+          git clone --depth 1 --branch v0.3.2-dev https://github.com/phys-winner/pc_decomp_homm5.git "$RUNNER_TEMP/h5"
+          test "$(git -C "$RUNNER_TEMP/h5" rev-parse HEAD)" = 6dc7914d7529d92beaf323c0f88a5102b4d0fd69
+          python -m pip install -r static-recomp/requirements.txt
+          python static-recomp/tests/make_fixture.py "$RUNNER_TEMP/fixture"
+          python static-recomp/tools/lift_selected.py --h5 "$RUNNER_TEMP/h5" --exe "$RUNNER_TEMP/fixture/synthetic.pe" --manifest "$RUNNER_TEMP/fixture/manifest.json" --output "$RUNNER_TEMP/lifted" --synthetic
+          toolchain="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
+          "$toolchain/bin/aarch64-linux-android30-clang" -O2 -fwrapv -fno-strict-aliasing -ffp-contract=off -DRECOMP_GENERATED_CODE -DRECOMP_TRACE -include "$RUNNER_TEMP/lifted/runtime_config.h" -I"$RUNNER_TEMP/h5/android/runtime" "$RUNNER_TEMP/lifted/lifted.c" static-recomp/native/poc_runtime.c -lm -o "$RUNNER_TEMP/synthetic-android-arm64"
+          "$toolchain/bin/llvm-readelf" -h "$RUNNER_TEMP/synthetic-android-arm64" > "$RUNNER_TEMP/android-elf.txt"
+          grep -q AArch64 "$RUNNER_TEMP/android-elf.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-android-arm64-build
+          path: |
+            ${{ runner.temp }}/synthetic-android-arm64
+            ${{ runner.temp }}/android-elf.txt

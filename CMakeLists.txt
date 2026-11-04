@@ -54,3 +54,8 @@ if(NOT ANDROID AND NOT IOS)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+option(H4_BUILD_STATIC_RECOMP_POC "Build isolated static-recomp surface tests" OFF)
+if(H4_BUILD_STATIC_RECOMP_POC)
+  add_subdirectory(static-recomp)
+endif()
