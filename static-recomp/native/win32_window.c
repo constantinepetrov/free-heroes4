@@ -19,9 +19,9 @@ static unsigned message_count;
 static SDL_Cursor *cursor;
 static unsigned char win_keys[256];
 static unsigned virtual_key(SDL_Keycode key){if(key>='a'&&key<='z')return key-32;if(key<128)return key;switch(key){case SDLK_LEFT:return 0x25;case SDLK_UP:return 0x26;case SDLK_RIGHT:return 0x27;case SDLK_DOWN:return 0x28;case SDLK_LSHIFT:case SDLK_RSHIFT:return 0x10;case SDLK_LCTRL:case SDLK_RCTRL:return 0x11;case SDLK_LALT:case SDLK_RALT:return 0x12;default:return 0;}}
-static Uint64 smoke_key_time;static int smoke_key_sent,smoke_key_released;
-static void key_event(Uint32 type){SDL_Event e={0};e.type=type;e.key.windowID=SDL_GetWindowID(window);e.key.key=SDLK_ESCAPE;e.key.scancode=SDL_SCANCODE_ESCAPE;e.key.down=type==SDL_EVENT_KEY_DOWN;SDL_PushEvent(&e);}
-void h4_test_push_key_pair(void){key_event(SDL_EVENT_KEY_DOWN);key_event(SDL_EVENT_KEY_UP);}
+static Uint64 smoke_key_time;static int smoke_key_sent,smoke_key_released,smoke_menu_sent;static SDL_Keycode smoke_key=SDLK_ESCAPE;
+static void key_event(Uint32 type,SDL_Keycode key){SDL_Event e={0};e.type=type;e.key.windowID=SDL_GetWindowID(window);e.key.key=key;e.key.scancode=SDL_GetScancodeFromKey(key,NULL);e.key.down=type==SDL_EVENT_KEY_DOWN;SDL_PushEvent(&e);}
+void h4_test_push_key_pair(uint32_t key){key_event(SDL_EVENT_KEY_DOWN,key);key_event(SDL_EVENT_KEY_UP,key);}
 
 static int video(void) {if(SDL_WasInit(SDL_INIT_VIDEO))return 1;if(SDL_InitSubSystem(SDL_INIT_VIDEO))return 1;void_log("SDL video: %s",SDL_GetError());void_set_last_error(50);return 0;}
 SDL_Window *h4_sdl_window(void) {return window;}
@@ -50,7 +50,8 @@ uint32_t h4_call_guest(uint32_t va,unsigned count,const uint32_t *args) {
 }
 static uint32_t send(uint32_t msg,uint32_t wp,uint32_t lp) {uint32_t args[]={HWND,msg,wp,lp};return h4_call_guest(wndproc,4,args);}
 static void pump(void) {
- if(smoke_key_sent&&!smoke_key_released&&SDL_GetTicks()-smoke_key_time>=150){key_event(SDL_EVENT_KEY_UP);smoke_key_released=1;void_log("synthetic Escape release");}
+ if(smoke_key_sent&&!smoke_key_released&&SDL_GetTicks()-smoke_key_time>=150){key_event(SDL_EVENT_KEY_UP,smoke_key);smoke_key_released=1;void_log("synthetic key release %u",(unsigned)smoke_key);}
+ if(smoke_key_released&&!smoke_menu_sent&&getenv("H4_SMOKE_NEW_GAME")&&SDL_GetTicks()-smoke_key_time>=1000){post(HWND,0x111,32897,0);smoke_menu_sent=1;void_log("synthetic WM_COMMAND 32897 from original RT_MENU New Game");}
  SDL_Event e;while(SDL_PollEvent(&e)){
   switch(e.type){
   case SDL_EVENT_QUIT:post(HWND,0x10,0,0);break;
@@ -102,10 +103,10 @@ int h4_window_api(const char *name,uint32_t *result,unsigned *argc) {
  NEXT API("GetActiveWindow",0) value=active;
  NEXT API("SetActiveWindow",1) value=active;if(arg(1)!=0&&arg(1)!=HWND)void_set_last_error(1400);else{active=arg(1);if(active&&window)SDL_RaiseWindow(window);}
  NEXT API("PostQuitMessage",1) post(0,0x12,arg(1),0);
- NEXT API("MsgWaitForMultipleObjects",5) if(getenv("H4_SMOKE_ESCAPE")&&!smoke_key_sent&&window){SDL_Event e={0};e.type=SDL_EVENT_WINDOW_FOCUS_GAINED;e.window.windowID=SDL_GetWindowID(window);SDL_PushEvent(&e);key_event(SDL_EVENT_KEY_DOWN);smoke_key_time=SDL_GetTicks();smoke_key_sent=1;void_log("synthetic focus/Escape queued for optional-intro smoke test");}if(arg(1)){void_log("unsupported MsgWait handles=%u waitAll=%u timeout=%u mask=%x",arg(1),arg(3),arg(4),arg(5));exit(77);}else{uint32_t timeout=arg(4),mask=arg(5);Uint64 start=SDL_GetTicks();for(;;){pump();if(queue_ready(mask)){value=0;break;}Uint64 elapsed=SDL_GetTicks()-start;if(timeout!=0xffffffffu&&elapsed>=timeout){value=258;break;}int ms=timeout==0xffffffffu?-1:(int)(timeout-elapsed>2147483647?2147483647:timeout-elapsed);if(smoke_key_sent&&!smoke_key_released&&(ms<0||ms>150))ms=150;SDL_WaitEventTimeout(NULL,ms);}}
+ NEXT API("MsgWaitForMultipleObjects",5) if(getenv("H4_SMOKE_ESCAPE")&&!smoke_key_sent&&window){SDL_Event e={0};e.type=SDL_EVENT_WINDOW_FOCUS_GAINED;e.window.windowID=SDL_GetWindowID(window);SDL_PushEvent(&e);key_event(SDL_EVENT_KEY_DOWN,smoke_key);smoke_key_time=SDL_GetTicks();smoke_key_sent=1;void_log("synthetic focus/Escape queued for optional-intro smoke test");}if(arg(1)){void_log("unsupported MsgWait handles=%u waitAll=%u timeout=%u mask=%x",arg(1),arg(3),arg(4),arg(5));exit(77);}else{uint32_t timeout=arg(4),mask=arg(5);Uint64 start=SDL_GetTicks();for(;;){pump();h4_surface_flush_capture();if(queue_ready(mask)){value=0;break;}Uint64 elapsed=SDL_GetTicks()-start;if(timeout!=0xffffffffu&&elapsed>=timeout){value=258;break;}int ms=timeout==0xffffffffu?-1:(int)(timeout-elapsed>2147483647?2147483647:timeout-elapsed);if(smoke_key_sent&&(!smoke_key_released||(!smoke_menu_sent&&getenv("H4_SMOKE_NEW_GAME")))&&(ms<0||ms>150))ms=150;SDL_WaitEventTimeout(NULL,ms);}}
  NEXT API("PeekMessageA",5) pump();need(arg(1),28,1);for(unsigned i=0;i<message_count;i++){typeof(messages[0]) m=messages[i];if(arg(2)&&m.hwnd!=arg(2)&&m.msg!=0x12)continue;if((arg(3)||arg(4))&&m.msg!=0x12&&(m.msg<arg(3)||m.msg>arg(4)))continue;memcpy(GPTR(arg(1)),&m,28);if(arg(5)&1){if((m.msg==0x100||m.msg==0x101)&&m.wp<256)win_keys[m.wp]=m.msg==0x100;else if(m.msg==0x201||m.msg==0x202)win_keys[1]=m.msg==0x201;else if(m.msg==0x204||m.msg==0x205)win_keys[2]=m.msg==0x204;else if(m.msg==8)memset(win_keys,0,sizeof win_keys);memmove(messages+i,messages+i+1,(message_count-i-1)*sizeof m);--message_count;}value=1;break;}
  NEXT API("DispatchMessageA",1) need(arg(1),28,0);if(MEM32(arg(1))==HWND&&window)value=send(MEM32(arg(1)+4),MEM32(arg(1)+8),MEM32(arg(1)+12));
- NEXT API("TranslateMessage",1) need(arg(1),28,0);a=MEM32(arg(1)+4);if(a==0x100||a==0x101){b=MEM32(arg(1)+8);if(a==0x100&&b>=32&&b<127)post(HWND,0x102,b,0);value=1;}
+ NEXT API("TranslateMessage",1) need(arg(1),28,0);a=MEM32(arg(1)+4);if(a==0x100||a==0x101){b=MEM32(arg(1)+8);if(a==0x100&&b>=32&&b<127){if(b>='A'&&b<='Z'&&!win_keys[0x10])b+=32;post(HWND,0x102,b,MEM32(arg(1)+12));}value=1;}
  NEXT API("DestroyWindow",1) if(window&&arg(1)==HWND){send(2,0,0);send(0x82,0,0);h4_surface_window_closed();SDL_DestroyWindow(window);window=NULL;active=0;destroy_menu(current_menu);value=1;}else void_set_last_error(1400);
  NEXT {return 0;}
 #undef API

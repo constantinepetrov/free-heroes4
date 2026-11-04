@@ -15,6 +15,7 @@ int h4_surface_flip(void *surface,void *back);
 int h4_surface_palette(void *surface,unsigned index,unsigned r,unsigned g,unsigned b);
 int h4_surface_present(void *surface,void *window);
 void h4_surface_window_closed(void);
+void h4_surface_flush_capture(void);
 const char *h4_surface_error(void);
 #ifdef __cplusplus
 }

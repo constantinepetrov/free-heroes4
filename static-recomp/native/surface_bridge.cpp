@@ -16,7 +16,7 @@ static SDL_Texture *texture;
 static SDL_Window *render_window;
 static int tw,th;
 static unsigned frames;
-static bool capture_registered;
+static bool capture_registered,capture_dirty;
 static Uint64 last_capture;
 static h4::graphics::Surface565 last_frame;
 static void save_capture(){
@@ -24,7 +24,9 @@ static void save_capture(){
  auto size=last_frame.size();SDL_Surface *out=SDL_CreateSurfaceFrom(size.width,size.height,SDL_PIXELFORMAT_RGB565,const_cast<uint16_t*>(last_frame.bits().data()),size.width*2);
  if(!out||!SDL_SaveBMP(out,path))std::fprintf(stderr,"Capture failed: %s\n",SDL_GetError());
  if(out)SDL_DestroySurface(out);
+ capture_dirty=false;
 }
+extern "C" void h4_surface_flush_capture(void){if(capture_dirty)save_capture();}
 #define TRY try
 #define FAIL catch(const std::exception& e){error=e.what();return 0;}
 extern "C" void *h4_surface_new(int w,int h,int bits){TRY{return new Surface(w,h,bits);}FAIL}
@@ -35,7 +37,7 @@ extern "C" int h4_surface_fill(void *p,int x,int y,int w,int h,unsigned color){T
 extern "C" int h4_surface_blt(void *p,int x,int y,void *src,int sx,int sy,int w,int h,int key){TRY{static_cast<Surface*>(p)->native.blt({x,y},static_cast<Surface*>(src)->native,{{sx,sy},{w,h}},key<0?std::nullopt:std::optional<uint16_t>(static_cast<uint16_t>(key)));return 1;}FAIL}
 extern "C" int h4_surface_flip(void *p,void *b){TRY{static_cast<Surface*>(p)->native.flip(static_cast<Surface*>(b)->native);return 1;}FAIL}
 extern "C" int h4_surface_palette(void *p,unsigned i,unsigned r,unsigned g,unsigned b){TRY{static_cast<Surface*>(p)->native.palette(i,r,g,b);return 1;}FAIL}
-extern "C" void h4_surface_window_closed(void){if(texture)SDL_DestroyTexture(texture);if(renderer)SDL_DestroyRenderer(renderer);texture=nullptr;renderer=nullptr;render_window=nullptr;tw=th=0;}
+extern "C" void h4_surface_window_closed(void){h4_surface_flush_capture();if(texture)SDL_DestroyTexture(texture);if(renderer)SDL_DestroyRenderer(renderer);texture=nullptr;renderer=nullptr;render_window=nullptr;tw=th=0;}
 extern "C" const char *h4_surface_error(void){return error.c_str();}
 extern "C" int h4_surface_present(void *p,void *win){TRY{
  auto frame=static_cast<Surface*>(p)->native.frame();auto size=frame.size();auto *window=static_cast<SDL_Window*>(win);
@@ -43,6 +45,6 @@ extern "C" int h4_surface_present(void *p,void *win){TRY{
  if(!texture||tw!=size.width||th!=size.height){if(texture)SDL_DestroyTexture(texture);texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGB565,SDL_TEXTUREACCESS_STREAMING,size.width,size.height);if(!texture)throw std::runtime_error(SDL_GetError());tw=size.width;th=size.height;SDL_SetRenderLogicalPresentation(renderer,tw,th,SDL_LOGICAL_PRESENTATION_LETTERBOX);}
  if(!SDL_UpdateTexture(texture,nullptr,frame.bits().data(),tw*2)||!SDL_RenderClear(renderer)||!SDL_RenderTexture(renderer,texture,nullptr,nullptr)||!SDL_RenderPresent(renderer))throw std::runtime_error(SDL_GetError());
  ++frames;if(frames<=3)std::fprintf(stderr,"DirectDraw present %u: %dx%d, guest surface pixels\n",frames,tw,th);
- const char *capture=std::getenv("H4_FRAME_OUTPUT");if(capture){unsigned nonzero=0;bool different=false;auto first=frame.bits()[0];for(auto pixel:frame.bits()){nonzero+=pixel!=0;different|=pixel!=first;}if(nonzero>256&&different){last_frame=std::move(frame);if(!capture_registered){std::atexit(save_capture);capture_registered=true;std::fprintf(stderr,"Captured nonuniform guest frame: %s (%u nonzero pixels)\n",capture,nonzero);}Uint64 now=SDL_GetTicks();if(!last_capture||now-last_capture>=500){save_capture();last_capture=now;}}}
+ const char *capture=std::getenv("H4_FRAME_OUTPUT");if(capture){unsigned nonzero=0;bool different=false;auto first=frame.bits()[0];for(auto pixel:frame.bits()){nonzero+=pixel!=0;different|=pixel!=first;}if(nonzero>256&&different){last_frame=std::move(frame);capture_dirty=true;if(!capture_registered){std::atexit(save_capture);capture_registered=true;std::fprintf(stderr,"Captured nonuniform guest frame: %s (%u nonzero pixels)\n",capture,nonzero);}Uint64 now=SDL_GetTicks();if(!last_capture||now-last_capture>=500){save_capture();last_capture=now;}}}
  return 1;
  }FAIL}
