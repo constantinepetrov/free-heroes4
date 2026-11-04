@@ -7,3 +7,5 @@ Heroes V: https://github.com/phys-winner/pc_decomp_homm5/tree/6dc7914d7529d92bea
 Собственный тестовый host и скрипты входят в GPL-3.0-проект OpenH4. Сведения о версиях, адресах и хешах не предоставляют прав на коммерческую игру. EXE/DLL, образы PE, C и машинный код, полученные из игры, хранятся только вне этого репозитория. Публичный CI получает исключительно собственные синтетические тесты.
 
 В `native/guest_memory.c` адаптирован `android/host/memory.c`: динамическое размещение окна на macOS, обнуление decommit, проверки диапазонов, повторное использование heap-слотов. В `native/guest_strings.c` сохранены открытые таблицы CP1251/CP1252 из `android/host/strings.c`; классификация CTYPE1 в bootstrap заимствована из kernel32.c. Лицензия этих проектных файлов GPL-3.0-or-later. Заголовок лицензии dlmalloc сохраняется в подключаемом `reference/dlmalloc/malloc.c` (MIT-0); файл используется из закрепленного checkout, в репозиторий не скопирован.
+
+В `native/win32_window.c` схема `h4_call_guest` адаптирована из `android/host/threads.c` H5 (`void_call_guest`): x86 stdcall, гостевой стек и сохранение callee-saved регистров. Лицензия GPL-3.0-or-later.

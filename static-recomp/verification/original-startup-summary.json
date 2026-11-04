@@ -1,4 +1,52 @@
 {
+  "source_commit": "97d115667db4a5db49cefc93bf4b2a81e4c118ce",
+  "original_sha256": "04ab08dd8e8e1430b88331e7b2c6e3dc1ed450837ba285ce76fe5f752b7f907e",
+  "native_machine": "arm64",
+  "platform": "darwin",
+  "binary_format": "Mach-O 64-bit arm64",
+  "entry": "0x008e3981",
+  "winmain": "0x008d2580",
+  "winmain_reached": true,
+  "wndproc": "0x008d14e0",
+  "compiled_functions": 6317,
+  "decoded_instructions": 251144,
+  "last_run_entries": 5440468,
+  "last_run_unique_entries": 5840,
+  "last_recorded_function": "0x008e0001",
   "exit": 77,
-  "stderr": "guest startup reached GetVersion\nunimplemented Win32 import KERNEL32.dll!HeapCreate from 008e96a5\n"
+  "original_menu": true,
+  "frame_size": [
+    800,
+    600
+  ],
+  "menu_frame_local": "/Volumes/Extreme SSD/games/HeroesIV-Android-Dev/h4-static-private/captures/original-menu-confirmed.png",
+  "menu_frame_sha256": "cb9e1c712c3efbfece4b3d5522fc0007f3a00c276ef1a84091788c254ffe40be",
+  "h4r_opened": [
+    "heroes4.h4r",
+    "movies.h4r",
+    "music.h4r",
+    "storm.h4r",
+    "storm_override.h4r",
+    "text.h4r",
+    "updates.h4r",
+    "x2.h4r",
+    "x2_override.h4r"
+  ],
+  "input_test": "synthetic SDL Escape, then WM_COMMAND 32897 from original RT_MENU; physical input unconfirmed",
+  "blocker": {
+    "api": "KERNEL32.dll!RaiseException",
+    "exception_code": "0xe06d7363",
+    "throw_info": "0x00a01880",
+    "type_descriptor": "._N",
+    "type_size": 1,
+    "required": "MSVC C++ EH/SEH dispatch and unwind to original catch; do not suppress exception"
+  },
+  "scenario_loaded": false,
+  "audio_video": false,
+  "android_game_tested": false,
+  "commercial_artifacts_uploaded": false,
+  "menu_checkpoint_local": "/Volumes/Extreme SSD/games/HeroesIV-Android-Dev/h4-static-private/menu-checkpoint-97d1156",
+  "checkpoint_native_sha256": "a889d1148728b52ab8787a269da2c24696480bbc6b44f5924cb19106d0447deb",
+  "menu_observation_seconds": 10,
+  "menu_observation_timed_out": true
 }

@@ -15,6 +15,7 @@
     "preallocated TLS only",
     "selected functions only; no WinMain/menu/scenario"
   ],
-  "source_commit": "a14c0456952a96e5d804ca9bbe7abfd24426910b",
-  "run_id": 41794339420
+  "source_commit": "97d115667db4a5db49cefc93bf4b2a81e4c118ce",
+  "run_id": 41821771374,
+  "bootstrap_host_tests": "PASS heap/VM/TLS/sync, guest COM/window/GDI, PE version/menu, private files/registry, queued key/WM_CHAR, synthetic BMP, optional audio/video failure, bounded progressive lifting"
 }
