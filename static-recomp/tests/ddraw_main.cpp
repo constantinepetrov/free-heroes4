@@ -24,7 +24,7 @@ int main(int argc,char** argv){try{
   pal.present(**opened);a.present(**opened);std::cout<<"PASS SDL presentation\n";
  }
 #else
- (void)argc;(void)argv;
+ if(argc==2&&std::string_view{argv[1]}=="--sdl")throw std::runtime_error("SDL presentation was requested but not built");
 #endif
  std::cout<<"PASS DirectDraw primitives: pitch, palette, lock, clipping, color key, overlap, flip\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

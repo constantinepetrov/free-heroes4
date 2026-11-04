@@ -39,9 +39,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y g++-14 ninja-build zlib1g-dev liblzma-dev
-          cmake -S . -B "$RUNNER_TEMP/ddraw-build" -G Ninja -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DH4_WARNINGS_AS_ERRORS=OFF -DH4_BUILD_STATIC_RECOMP_POC=ON -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+          git clone --depth 1 --branch release-3.4.14 https://github.com/libsdl-org/SDL.git "$RUNNER_TEMP/sdl"
+          test "$(git -C "$RUNNER_TEMP/sdl" rev-parse HEAD)" = 147a8ee32dbf9ac02f3794964490687b6bbda1bc
+          cmake -S "$RUNNER_TEMP/sdl" -B "$RUNNER_TEMP/sdl-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/sdl-install" -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_UNIX_CONSOLE_BUILD=ON -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
+          cmake --build "$RUNNER_TEMP/sdl-build" --parallel 2
+          cmake --install "$RUNNER_TEMP/sdl-build"
+          cmake -S . -B "$RUNNER_TEMP/ddraw-build" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/sdl-install" -DH4_BUILD_PLATFORM=ON -G Ninja -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DH4_WARNINGS_AS_ERRORS=OFF -DH4_BUILD_STATIC_RECOMP_POC=ON -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
           cmake --build "$RUNNER_TEMP/ddraw-build" --target h4-ddraw-poc-test --parallel 2
-          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$RUNNER_TEMP/ddraw-build/static-recomp/h4-ddraw-poc-test" --sdl
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$RUNNER_TEMP/ddraw-build/static-recomp/h4-ddraw-poc-test" --sdl | tee "$RUNNER_TEMP/ddraw-tests.txt"
+          grep -q "^PASS SDL presentation" "$RUNNER_TEMP/ddraw-tests.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -49,6 +55,7 @@ jobs:
           path: |
             ${{ runner.temp }}/synthetic-results.json
             ${{ runner.temp }}/lifted/lift-summary.json
+            ${{ runner.temp }}/ddraw-tests.txt
   android-arm64-toolchain:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
