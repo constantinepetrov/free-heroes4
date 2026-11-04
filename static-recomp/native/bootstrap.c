@@ -100,6 +100,25 @@ static uint32_t object_wait(uint32_t h,uint32_t ms) {
  if(ms==0)return 258;
  void_log("unsupported blocking wait handle=%08x timeout=%u from %08x",h,ms,g_cur_func);exit(77);
 }
+/* Guest environment is isolated from host control variables and credentials. */
+static struct {char *name,*value;} environment[128];
+static uint32_t environment_set(uint32_t name,uint32_t value) {
+ const char *n=h4_string(name);if(!*n||(strchr(n,'=')&&!(n[0]=='='&&n[1]&&n[2]==':'&&!n[3]))){void_set_last_error(87);return 0;}
+ unsigned i=0;while(i<128&&(!environment[i].name||strcasecmp(n,environment[i].name)))i++;
+ if(!value){if(i<128){free(environment[i].name);free(environment[i].value);environment[i].name=environment[i].value=NULL;}return 1;}
+ if(i==128){i=0;while(i<128&&environment[i].name)i++;if(i==128){void_set_last_error(8);return 0;}}
+ char *copy=strdup(h4_string(value)),*key=strdup(n);if(!copy||!key){free(copy);free(key);void_set_last_error(8);return 0;}free(environment[i].name);free(environment[i].value);environment[i].name=key;environment[i].value=copy;return 1;
+}
+static uint32_t environment_get(uint32_t name,uint32_t out,uint32_t cap) {
+ const char *n=h4_string(name);for(unsigned i=0;i<128;i++)if(environment[i].name&&!strcasecmp(n,environment[i].name)){unsigned size=(unsigned)strlen(environment[i].value);if(cap<=size)return size+1;h4_need(out,size+1,1);memcpy(GPTR(out),environment[i].value,size+1);void_set_last_error(0);return size;}
+ void_set_last_error(203);return 0;
+}
+static uint32_t environment_block(int wide) {
+ size_t n=1;for(unsigned i=0;i<128;i++)if(environment[i].name)n+=strlen(environment[i].name)+strlen(environment[i].value)+2;if(n==1)n=2;
+ uint32_t out=void_galloc((uint32_t)n*(wide?2u:1u));if(!out)return 0;unsigned offset=0;
+ for(unsigned i=0;i<128;i++)if(environment[i].name){const char *parts[]={environment[i].name,"=",environment[i].value};for(unsigned k=0;k<3;k++)for(const unsigned char *p=(const unsigned char*)parts[k];*p;p++){if(wide)MEM16(out+2*offset)=void_cp1252_to_u16(*p);else MEM8(out+offset)=*p;offset++;}offset++;}
+ return out;
+}
 static void invoke(void) {
  const char *full=active_import,*s=strchr(full,'!');s=s?s+1:full;
  uint32_t a,b,c,d,value=0;unsigned count=0;
@@ -108,6 +127,7 @@ static void invoke(void) {
 #define API(name,n) if(!strcmp(s,name)) {count=n;
 #define NEXT } else
  API("GetVersion",0) value=0x0a280105;
+ NEXT API("MessageBoxA",4) void_log("original MessageBoxA flags=%08x title=%s text=%s",h4_arg(4),h4_arg(3)?h4_string(h4_arg(3)):"",h4_arg(2)?h4_string(h4_arg(2)):"");void_log("stopping before dialog response; no success is simulated");exit(77);
  NEXT API("RaiseException",4) void_log("original RaiseException code=%08x flags=%08x nargs=%u args=%08x caller=%08x",h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4),g_cur_func);if(h4_arg(3)<=15&&h4_arg(4)){h4_need(h4_arg(4),h4_arg(3)*4,0);for(unsigned i=0;i<h4_arg(3);i++)void_log("exception arg[%u]=%08x",i,MEM32(h4_arg(4)+4*i));}void_log("SEH dispatch is not implemented; stopping instead of reporting success");exit(77);
  NEXT API("DirectDrawCreateEx",4) value=h4_directdraw_create(h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4));
  NEXT API("LoadImageA",6) if(h4_arg(3)==1||h4_arg(3)==2){void_log("optional icon/cursor LoadImageA unsupported, returning NULL/ERROR_NOT_SUPPORTED");void_set_last_error(50);}else void_fatal("unsupported LoadImageA type %u",h4_arg(3));
@@ -148,7 +168,7 @@ static void invoke(void) {
  NEXT API("SetEvent",1) object *o=object_get(h4_arg(1));if(o&&o->kind==1){o->state=1;value=1;}else void_set_last_error(6);
  NEXT API("ResetEvent",1) object *o=object_get(h4_arg(1));if(o&&o->kind==1){o->state=0;value=1;}else void_set_last_error(6);
  NEXT API("ReleaseMutex",1) object *o=object_get(h4_arg(1));if(o&&o->kind==2&&o->owner==1&&o->recursion){if(!--o->recursion)o->owner=0;value=1;}else void_set_last_error(288);
- NEXT API("CloseHandle",1) object *o=object_get(h4_arg(1));if(o){if(!--o->refs){free(o->name);memset(o,0,sizeof *o);}value=1;}else void_set_last_error(6);
+ NEXT API("CloseHandle",1) object *o=object_get(h4_arg(1));if(o){if(!--o->refs){free(o->name);memset(o,0,sizeof *o);}value=1;}else if(h4_file_close(h4_arg(1)))value=1;else void_set_last_error(6);
  NEXT API("InitializeCriticalSection",1) a=h4_arg(1);h4_need(a,24,1);memset(GPTR(a),0,24);MEM32(a)=MEM32(a+4)=0xffffffff;
  NEXT API("EnterCriticalSection",1) a=h4_arg(1);h4_need(a,24,1);if(MEM32(a+12)&&MEM32(a+12)!=1)void_fatal("critical section owner unsupported");MEM32(a+12)=1;MEM32(a+8)++;MEM32(a+4)++;
  NEXT API("LeaveCriticalSection",1) a=h4_arg(1);h4_need(a,24,1);if(MEM32(a+12)!=1||!MEM32(a+8))void_fatal("critical section not owned");if(!--MEM32(a+8))MEM32(a+12)=0;MEM32(a+4)--;
@@ -172,18 +192,20 @@ static void invoke(void) {
  NEXT API("GetModuleHandleA",1) if(!h4_arg(1)||!strcasecmp(h4_string(h4_arg(1)),"heroes4.exe"))value=H4_IMAGE_BASE;else void_set_last_error(126);
  NEXT API("GetModuleFileNameA",3) const char *p="C:\\HeroesIV\\heroes4.exe";a=h4_arg(3);if(h4_arg(1)&&h4_arg(1)!=H4_IMAGE_BASE)void_set_last_error(126);else if(a){h4_need(h4_arg(2),a,1);b=(uint32_t)strlen(p);if(b>=a){b=a-1;void_set_last_error(122);}memcpy(GPTR(h4_arg(2)),p,b);MEM8(h4_arg(2)+b)=0;value=b;}
  NEXT API("GetStartupInfoA",1) a=h4_arg(1);h4_need(a,68,1);memset(GPTR(a),0,68);MEM32(a)=68;MEM32(a+48)=1;
- NEXT API("GetEnvironmentStringsW",0) static uint32_t env;if(!env)env=void_galloc(4);value=env;
- NEXT API("GetEnvironmentStrings",0) static uint32_t env;if(!env)env=void_galloc(2);value=env;
- NEXT API("FreeEnvironmentStringsW",1) value=1; /* Environment block retained for this process lifetime. */
- NEXT API("FreeEnvironmentStringsA",1) value=1;
+ NEXT API("SetEnvironmentVariableA",2) value=environment_set(h4_arg(1),h4_arg(2));
+ NEXT API("GetEnvironmentVariableA",3) value=environment_get(h4_arg(1),h4_arg(2),h4_arg(3));
+ NEXT API("GetEnvironmentStringsW",0) value=environment_block(1);
+ NEXT API("GetEnvironmentStrings",0) value=environment_block(0);
+ NEXT API("FreeEnvironmentStringsW",1) value=void_heap_free(void_process_heap(),h4_arg(1));
+ NEXT API("FreeEnvironmentStringsA",1) value=void_heap_free(void_process_heap(),h4_arg(1));
  NEXT API("GetStdHandle",1) a=h4_arg(1);value=(a>=0xfffffff4u&&a<=0xfffffff6u)?0x100+(0xfffffff6u-a):0xffffffff;
- NEXT API("GetFileType",1) a=h4_arg(1);if(a>=0x100&&a<=0x102)value=2;else void_set_last_error(6);
+ NEXT API("GetFileType",1) a=h4_arg(1);if(a>=0x100&&a<=0x102)value=2;else if(!(value=h4_file_type(a)))void_set_last_error(6);
  NEXT API("IsBadReadPtr",2) value=!void_vm_readable(h4_arg(1),h4_arg(2));
  NEXT API("IsBadWritePtr",2) value=!void_vm_writable(h4_arg(1),h4_arg(2));
  NEXT API("IsBadCodePtr",1) value=h4_find_lifted(h4_arg(1))==NULL;
  NEXT API("OutputDebugStringA",1) void_log("guest: %s",h4_string(h4_arg(1)));
  NEXT API("ExitProcess",1) void_log("original ExitProcess(%u), caller %08x, API calls %llu",h4_arg(1),g_cur_func,(unsigned long long)api_calls);exit(h4_arg(1)?79:0);
- NEXT {if(h4_window_api(s,&value,&count)||h4_gdi_api(s,&value,&count)||h4_registry_api(s,&value,&count)){finish(value,count);return;}void_log("unimplemented Win32 import %s from %08x (IAT %08x, calls %llu)",full,g_cur_func,active_iat,(unsigned long long)api_calls);exit(77);}
+ NEXT {if(h4_window_api(s,&value,&count)||h4_gdi_api(s,&value,&count)||h4_registry_api(s,&value,&count)||h4_file_api(s,&value,&count)){finish(value,count);return;}void_log("unimplemented Win32 import %s from %08x (IAT %08x, calls %llu)",full,g_cur_func,active_iat,(unsigned long long)api_calls);exit(77);}
 #undef API
 #undef NEXT
  (void)b;(void)c;(void)d;finish(value,count);
@@ -212,18 +234,21 @@ uint32_t h4_test_api(const char *name,unsigned count,...) {
 }
 void h4_test_version(void);
 void h4_test_registry(int read_only);
+void h4_test_files(void);
+void h4_test_menu_setup(uint32_t wc);
+void h4_test_menu(uint32_t window);
 void h4_test_ddraw(void);
 static void window_selftest(void) {
  uint32_t wc=void_galloc(48),name=void_gstrdup("SyntheticH4Window"),rect=void_galloc(28);
- MEM32(wc)=48;MEM32(wc+8)=0xdfff0000;MEM32(wc+40)=name;
+ h4_test_menu_setup(wc);MEM32(wc)=48;MEM32(wc+8)=0xdfff0000;MEM32(wc+40)=name;
  uint32_t atom=h4_test_api("USER32.dll!RegisterClassExA",1,wc);assert(atom);assert(!h4_test_api("USER32.dll!RegisterClassExA",1,wc));
- uint32_t win=h4_test_api("USER32.dll!CreateWindowExA",12,0u,atom,name,0u,0u,0u,320u,200u,0u,0u,H4_IMAGE_BASE,0u);assert(win==0x50000001&&callback_tests==2);
+ uint32_t win=h4_test_api("USER32.dll!CreateWindowExA",12,0u,atom,name,0u,0u,0u,320u,200u,0u,0u,H4_IMAGE_BASE,0u);assert(win==0x50000001&&callback_tests==2);h4_test_menu(win);
  assert(h4_test_api("USER32.dll!GetClientRect",2,win,rect)&&MEM32(rect+8)==320&&MEM32(rect+12)==200);
  assert(!h4_test_api("USER32.dll!SetWindowLongA",3,win,0xffffffebu,42u));assert(h4_test_api("USER32.dll!SetWindowLongA",3,win,0xffffffebu,0u)==42);
  h4_test_api("USER32.dll!ShowWindow",2,win,1u);assert(h4_test_api("USER32.dll!GetActiveWindow",0)==win);
  unsigned messages=0;while(h4_test_api("USER32.dll!PeekMessageA",5,rect,0u,0u,0u,1u)){assert(++messages<128);h4_test_api("USER32.dll!DispatchMessageA",1,rect);}
  assert(messages>=3&&callback_tests>=5);h4_test_ddraw();assert(h4_test_api("USER32.dll!DestroyWindow",1,win));assert(!h4_test_api("USER32.dll!GetClientRect",2,win,rect));
- void_gfree(wc);void_gfree(name);void_gfree(rect);puts("PASS SDL window, messages and synthetic x86 stdcall callbacks");
+ assert(void_vm_free(H4_IMAGE_BASE,0,0x8000));void_gfree(wc);void_gfree(name);void_gfree(rect);puts("PASS SDL window, messages and synthetic x86 stdcall callbacks");
 }
 static void selftest(void) {
  uint32_t h=void_heap_create(4096,0);assert(h);uint32_t p=void_heap_alloc(h,33,1);assert(p&&!(p&7)&&void_heap_size(h,p)==33);
@@ -245,7 +270,8 @@ static void selftest(void) {
  uint32_t cs=void_galloc(24);h4_test_api("KERNEL32.dll!InitializeCriticalSection",1,cs);h4_test_api("KERNEL32.dll!EnterCriticalSection",1,cs);h4_test_api("KERNEL32.dll!EnterCriticalSection",1,cs);assert(MEM32(cs+8)==2&&MEM32(cs+12)==1);h4_test_api("KERNEL32.dll!LeaveCriticalSection",1,cs);h4_test_api("KERNEL32.dll!LeaveCriticalSection",1,cs);assert(!MEM32(cs+12)&&MEM32(cs+4)==0xffffffff);h4_test_api("KERNEL32.dll!DeleteCriticalSection",1,cs);void_gfree(cs);
  assert(!void_vm_alloc(0xfffff000,0x10000,0x3000,4));assert(!void_vm_free(0xfffff000,0x10000,0x4000));assert(!void_vm_protect(0xfffff000,0x10000,4,&old));
  uint32_t text=void_galloc(16),out=void_galloc(32);MEM8(text)=0xdf;MEM8(text+1)=0;assert(h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,16u)==2&&MEM16(out)==0x42f&&!MEM16(out+2));assert(h4_test_api("KERNEL32.dll!WideCharToMultiByte",8,1251u,0u,out,0xffffffffu,text,16u,0u,0u)==2&&MEM8(text)==0xdf);assert(!h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,1u)&&last_error==122);MEM16(text)='A';MEM16(text+2)=' ';MEM16(text+4)=0;assert(h4_test_api("KERNEL32.dll!GetStringTypeW",4,1u,text,0xffffffffu,out));assert(MEM16(out)==0x381&&MEM16(out+2)==0x248&&MEM16(out+4)==0x20);assert(h4_test_api("KERNEL32.dll!LCMapStringW",6,0x409u,0x100u,text,0xffffffffu,out,16u)==3&&MEM16(out)=='a');void_gfree(text);void_gfree(out);
- h4_test_version();window_selftest();h4_test_registry(0);
+ uint32_t env_name=void_gstrdup("H4_STATE_DIR"),env_value=void_gstrdup("C:\\Different"),env_out=void_galloc(64);const char *host_state=getenv("H4_STATE_DIR");assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,env_value));assert(getenv("H4_STATE_DIR")==host_state);assert(h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u)==12&&!strcmp(GPTR(env_out),"C:\\Different"));uint32_t block=h4_test_api("KERNEL32.dll!GetEnvironmentStringsW",0);assert(block&&MEM16(block)=='H');assert(h4_test_api("KERNEL32.dll!FreeEnvironmentStringsW",1,block));assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,0u));assert(!h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u));void_gfree(env_name);void_gfree(env_value);void_gfree(env_out);
+ h4_test_version();window_selftest();h4_test_registry(0);h4_test_files();
  puts("PASS guest heap, VM, TLS, event, mutex, critical section, CP1251/1252, CTYPE1 and stdcall tests");
 }
 int main(int argc,char **argv) {

@@ -8,8 +8,8 @@
 #define str h4_string
 #define HWND 0x50000001u
 static SDL_Window *window;
-static uint32_t wndproc,active,capture,user_data,style,ex_style;
-static struct {char *name;uint32_t proc,style,extra;} classes[32];
+static uint32_t wndproc,active,capture,user_data,style,ex_style,current_menu;
+static struct {char *name;uint32_t proc,style,extra,menu;} classes[32];
 static unsigned class_count;
 static struct {uint32_t root,size;} accelerators[32];
 static unsigned accel_count;
@@ -18,6 +18,18 @@ static unsigned message_count;
 static SDL_Cursor *cursor;
 static int video(void) {if(SDL_WasInit(SDL_INIT_VIDEO))return 1;if(SDL_InitSubSystem(SDL_INIT_VIDEO))return 1;void_log("SDL video: %s",SDL_GetError());void_set_last_error(50);return 0;}
 SDL_Window *h4_sdl_window(void) {return window;}
+/* shortcut: command state is modeled; native menu-bar rendering is not yet connected. */
+static struct {unsigned used,count;struct {unsigned id,flags,parent,position;} items[512];} menus[32];
+static int menu_index(uint32_t handle){unsigned i=handle-0x57000000u;return i<32&&menus[i].used?(int)i:-1;}
+static int menu_parse(unsigned m,uint32_t *pos,uint32_t end,unsigned depth,unsigned parent){
+ if(depth>16)return 0;unsigned position=0;
+ while(*pos+2<=end){unsigned flags=MEM16(*pos);*pos+=2;unsigned id=0;if(!(flags&0x10)){if(*pos+2>end)return 0;id=MEM16(*pos);*pos+=2;}
+  while(*pos+2<=end&&MEM16(*pos))*pos+=2;if(*pos+2>end||menus[m].count==512)return 0;*pos+=2;unsigned i=menus[m].count++;menus[m].items[i]=(typeof(menus[m].items[0])){id,flags&~0x80u,parent,position++};
+  if((flags&0x10)&&!menu_parse(m,pos,end,depth+1,i))return 0;if(flags&0x80)return 1;
+ }return 0;
+}
+static uint32_t load_menu(unsigned id){uint32_t size=0,root=h4_pe_resource(4,(int)id,&size);if(!root||size<4||MEM16(root)){void_set_last_error(1813);return 0;}unsigned i=0;while(i<32&&menus[i].used)i++;if(i==32){void_set_last_error(8);return 0;}menus[i].count=0;uint32_t pos=root+4+MEM16(root+2);if(pos>root+size||!menu_parse(i,&pos,root+size,0,0xffffffffu)){menus[i].count=0;void_set_last_error(13);return 0;}menus[i].used=1;return 0x57000000u+i;}
+static void destroy_menu(uint32_t handle){int i=menu_index(handle);if(i>=0)memset(menus+i,0,sizeof menus[0]);if(current_menu==handle)current_menu=0;}
 static void post(uint32_t hwnd,uint32_t msg,uint32_t wp,uint32_t lp) {
  if(message_count==256)void_fatal("Win32 message queue exhausted");
  messages[message_count++]=(typeof(messages[0])){hwnd,msg,wp,lp,(uint32_t)SDL_GetTicks(),0,0};
@@ -54,8 +66,8 @@ int h4_window_api(const char *name,uint32_t *result,unsigned *argc) {
  NEXT API("GetSystemMetrics",1) if(video()){const SDL_DisplayMode *m=SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());a=arg(1);if(a==0||a==16)value=m?(uint32_t)m->w:800;else if(a==1||a==17)value=m?(uint32_t)m->h:600;else if(a==11||a==12||a==13||a==14)value=32;else{void_log("unsupported GetSystemMetrics index %u",a);void_set_last_error(50);}}
  NEXT API("AdjustWindowRectEx",4) need(arg(1),16,1);if(arg(3)||(arg(2)&0x00c00000)){void_log("decorated AdjustWindowRectEx unsupported");void_set_last_error(50);}else value=1;
  NEXT API("LoadCursorA",2) if(arg(1)||arg(2)!=32512){void_log("unsupported cursor resource %08x/%08x",arg(1),arg(2));void_set_last_error(50);}else if(video()){if(!cursor)cursor=SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);if(cursor){SDL_SetCursor(cursor);value=0x50000100;}else{void_log("SDL cursor: %s",SDL_GetError());void_set_last_error(50);}}
- NEXT API("RegisterClassExA",1) a=arg(1);need(a,48,0);void_log("RegisterClassExA menu=%08x",MEM32(a+36));if(MEM32(a)!=48||class_count==32||MEM32(a+12)||MEM32(a+16)>64){void_set_last_error(87);}else{const char *s=str(MEM32(a+40));for(unsigned i=0;i<class_count;i++)if(!strcasecmp(s,classes[i].name)){void_set_last_error(1410);goto done;}classes[class_count]=(typeof(classes[0])){strdup(s),MEM32(a+8),MEM32(a+4),MEM32(a+16)};value=++class_count;}
- NEXT API("CreateWindowExA",12) if(window){void_set_last_error(50);}else{a=arg(2);unsigned index=32;if(a<65536){if(a&&a<=class_count)index=a-1;}else{const char *s=str(a);for(unsigned i=0;i<class_count;i++)if(!strcasecmp(s,classes[i].name))index=i;}if(index==32){void_set_last_error(1407);goto done;}int w=(int)arg(7),h=(int)arg(8);if(w<=0)w=800;if(h<=0)h=600;if(w>8192||h>8192){void_set_last_error(87);goto done;}if(!video())goto done;const char *title=arg(3)?str(arg(3)):"Heroes IV";window=SDL_CreateWindow(title,w,h,SDL_WINDOW_HIDDEN);if(!window){void_log("SDL_CreateWindow: %s",SDL_GetError());void_set_last_error(8);goto done;}wndproc=classes[index].proc;style=arg(4);ex_style=arg(1);uint32_t cs=void_galloc(48);if(!cs)void_fatal("CREATESTRUCT allocation failed");uint32_t fields[]={arg(12),arg(11),arg(10),arg(9),h,w,arg(6),arg(5),style,arg(3),arg(2),ex_style};memcpy(GPTR(cs),fields,48);if(!send(0x81,0,cs)||send(1,0,cs)==0xffffffff){h4_surface_window_closed();SDL_DestroyWindow(window);window=NULL;void_gfree(cs);goto done;}void_gfree(cs);if(style&0x10000000){SDL_ShowWindow(window);active=HWND;post(HWND,6,1,0);post(HWND,7,0,0);}value=HWND;void_log("real SDL window created %dx%d, original WndProc=%08x; no game frame yet",w,h,wndproc);}
+ NEXT API("RegisterClassExA",1) a=arg(1);need(a,48,0);void_log("RegisterClassExA menu=%08x",MEM32(a+36));if(MEM32(a)!=48||class_count==32||MEM32(a+12)||MEM32(a+16)>64){void_set_last_error(87);}else{const char *s=str(MEM32(a+40));for(unsigned i=0;i<class_count;i++)if(!strcasecmp(s,classes[i].name)){void_set_last_error(1410);goto done;}classes[class_count]=(typeof(classes[0])){strdup(s),MEM32(a+8),MEM32(a+4),MEM32(a+16),MEM32(a+36)};value=++class_count;}
+ NEXT API("CreateWindowExA",12) if(window){void_set_last_error(50);}else{a=arg(2);unsigned index=32;if(a<65536){if(a&&a<=class_count)index=a-1;}else{const char *s=str(a);for(unsigned i=0;i<class_count;i++)if(!strcasecmp(s,classes[i].name))index=i;}if(index==32){void_set_last_error(1407);goto done;}int w=(int)arg(7),h=(int)arg(8);if(w<=0)w=800;if(h<=0)h=600;if(w>8192||h>8192){void_set_last_error(87);goto done;}if(!video())goto done;const char *title=arg(3)?str(arg(3)):"Heroes IV";window=SDL_CreateWindow(title,w,h,SDL_WINDOW_HIDDEN);if(!window){void_log("SDL_CreateWindow: %s",SDL_GetError());void_set_last_error(8);goto done;}current_menu=arg(10);if(!current_menu&&classes[index].menu)current_menu=load_menu(classes[index].menu);if(classes[index].menu&&!current_menu){h4_surface_window_closed();SDL_DestroyWindow(window);window=NULL;goto done;}wndproc=classes[index].proc;style=arg(4);ex_style=arg(1);uint32_t cs=void_galloc(48);if(!cs)void_fatal("CREATESTRUCT allocation failed");uint32_t fields[]={arg(12),arg(11),arg(10),arg(9),h,w,arg(6),arg(5),style,arg(3),arg(2),ex_style};memcpy(GPTR(cs),fields,48);if(!send(0x81,0,cs)||send(1,0,cs)==0xffffffff){h4_surface_window_closed();SDL_DestroyWindow(window);window=NULL;void_gfree(cs);goto done;}void_gfree(cs);if(style&0x10000000){SDL_ShowWindow(window);active=HWND;post(HWND,6,1,0);post(HWND,7,0,0);}value=HWND;void_log("real SDL window created %dx%d, original WndProc=%08x; no game frame yet",w,h,wndproc);}
  NEXT API("DefWindowProcA",4) a=arg(2);if(a==0x81)value=1;else if(a==0x10){if(window){h4_surface_window_closed();SDL_DestroyWindow(window);window=NULL;active=0;}post(0,0x12,0,0);}
  NEXT API("SetWindowLongA",3) if(arg(1)!=HWND){void_set_last_error(1400);}else{a=arg(2);if(a==0xfffffffc){value=wndproc;wndproc=arg(3);}else if(a==0xffffffeb){value=user_data;user_data=arg(3);}else if(a==0xfffffff0){value=style;style=arg(3);}else if(a==0xffffffec){value=ex_style;ex_style=arg(3);}else void_fatal("unsupported SetWindowLongA index %08x",a);}
  NEXT API("GetClientRect",2) if(!window||arg(1)!=HWND){void_set_last_error(1400);}else{need(arg(2),16,1);int w,h;SDL_GetWindowSize(window,&w,&h);MEM32(arg(2))=MEM32(arg(2)+4)=0;MEM32(arg(2)+8)=w;MEM32(arg(2)+12)=h;value=1;}
@@ -63,16 +75,19 @@ int h4_window_api(const char *name,uint32_t *result,unsigned *argc) {
  NEXT API("ShowWindow",2) if(window&&arg(1)==HWND){value=!!(SDL_GetWindowFlags(window)&SDL_WINDOW_HIDDEN)?0:1;if(!arg(2))SDL_HideWindow(window);else{SDL_ShowWindow(window);active=HWND;post(HWND,6,1,0);post(HWND,7,0,0);post(HWND,0xf,0,0);}}else void_set_last_error(1400);
  NEXT API("UpdateWindow",1) if(window&&arg(1)==HWND){send(0xf,0,0);value=1;}else void_set_last_error(1400);
  NEXT API("MoveWindow",6) if(window&&arg(1)==HWND&&arg(4)&&arg(5)&&arg(4)<=8192&&arg(5)<=8192){value=SDL_SetWindowPosition(window,(int)arg(2),(int)arg(3))&&SDL_SetWindowSize(window,(int)arg(4),(int)arg(5));if(value){post(HWND,5,0,(arg(4)&0xffff)|(arg(5)<<16));if(arg(6))post(HWND,0xf,0,0);}}else void_set_last_error(87);
- NEXT API("CheckMenuItem",3) if(!arg(1)){value=0xffffffffu;void_set_last_error(1401);}else{void_log("unimplemented CheckMenuItem for menu %08x",arg(1));exit(77);}
- NEXT API("EnableMenuItem",3) if(!arg(1)){value=0xffffffffu;void_set_last_error(1401);}else{void_log("unimplemented EnableMenuItem for menu %08x",arg(1));exit(77);}
- NEXT API("GetMenu",1) if(arg(1)!=0x50000001u||!window)void_set_last_error(1400); /* This popup window has no assigned native menu. */
+ NEXT API("LoadMenuA",2) if(arg(1)!=H4_IMAGE_BASE||arg(2)>65535)void_set_last_error(50);else value=load_menu(arg(2));
+ NEXT API("SetMenu",2) if(arg(1)!=0x50000001u||!window)void_set_last_error(1400);else if(arg(2)&&menu_index(arg(2))<0)void_set_last_error(1401);else{current_menu=arg(2);value=1;}
+ NEXT API("DestroyMenu",1) if(menu_index(arg(1))<0)void_set_last_error(1401);else{destroy_menu(arg(1));value=1;}
+ NEXT API("CheckMenuItem",3) value=0xffffffffu;int m=menu_index(arg(1));if(m<0)void_set_last_error(1401);else{for(unsigned i=0;i<menus[m].count;i++){typeof(menus[m].items[0]) *item=menus[m].items+i;if((arg(3)&0x400)?(item->parent==0xffffffffu&&item->position==arg(2)):(item->id==arg(2))){value=item->flags&8;item->flags=(item->flags&~8u)|(arg(3)&8);break;}}}
+ NEXT API("EnableMenuItem",3) value=0xffffffffu;int m=menu_index(arg(1));if(m<0)void_set_last_error(1401);else{for(unsigned i=0;i<menus[m].count;i++){typeof(menus[m].items[0]) *item=menus[m].items+i;if((arg(3)&0x400)?(item->parent==0xffffffffu&&item->position==arg(2)):(item->id==arg(2))){value=item->flags&3;item->flags=(item->flags&~3u)|(arg(3)&3);break;}}}
+ NEXT API("GetMenu",1) if(arg(1)!=0x50000001u||!window)void_set_last_error(1400);else value=current_menu;
  NEXT API("GetActiveWindow",0) value=active;
  NEXT API("SetActiveWindow",1) value=active;if(arg(1)!=0&&arg(1)!=HWND)void_set_last_error(1400);else{active=arg(1);if(active&&window)SDL_RaiseWindow(window);}
  NEXT API("PostQuitMessage",1) post(0,0x12,arg(1),0);
  NEXT API("PeekMessageA",5) pump();need(arg(1),28,1);for(unsigned i=0;i<message_count;i++){typeof(messages[0]) m=messages[i];if(arg(2)&&m.hwnd!=arg(2)&&m.msg!=0x12)continue;if((arg(3)||arg(4))&&m.msg!=0x12&&(m.msg<arg(3)||m.msg>arg(4)))continue;memcpy(GPTR(arg(1)),&m,28);if(arg(5)&1){memmove(messages+i,messages+i+1,(message_count-i-1)*sizeof m);--message_count;}value=1;break;}
  NEXT API("DispatchMessageA",1) need(arg(1),28,0);if(MEM32(arg(1))==HWND&&window)value=send(MEM32(arg(1)+4),MEM32(arg(1)+8),MEM32(arg(1)+12));
  NEXT API("TranslateMessage",1) need(arg(1),28,0);a=MEM32(arg(1)+4);if(a==0x100||a==0x101){b=MEM32(arg(1)+8);if(a==0x100&&b>=32&&b<127)post(HWND,0x102,b,0);value=1;}
- NEXT API("DestroyWindow",1) if(window&&arg(1)==HWND){send(2,0,0);send(0x82,0,0);h4_surface_window_closed();SDL_DestroyWindow(window);window=NULL;active=0;value=1;}else void_set_last_error(1400);
+ NEXT API("DestroyWindow",1) if(window&&arg(1)==HWND){send(2,0,0);send(0x82,0,0);h4_surface_window_closed();SDL_DestroyWindow(window);window=NULL;active=0;destroy_menu(current_menu);value=1;}else void_set_last_error(1400);
  NEXT {return 0;}
 #undef API
 #undef NEXT

@@ -16,7 +16,8 @@ for step in range(a.steps):
  try:run=subprocess.run([str(work/'startup'),str(a.image)],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20,env=run_env)
  except subprocess.TimeoutExpired as e:
   print('Startup timeout; preserve diagnostics, do not assume progress');(work/'startup-timeout.txt').write_bytes(e.stdout or b'');break
- (work/f'step-{step:03}.txt').write_text(run.stdout);(work/'last-startup.txt').write_text(run.stdout);print(run.stdout,flush=True)
+ (work/f'step-{step:03}.txt').write_text(run.stdout);(work/'last-startup.txt').write_text(run.stdout);important=[line for line in run.stdout.splitlines() if any(word in line for word in ["unsupported dispatch","unimplemented ","guest fault","lift trap","execution summary:","original MessageBoxA","Captured ","DirectDraw present","RaiseException"])]
+ print(" | ".join(important) or f"native exit {run.returncode}; full log: {work/'last-startup.txt'}",flush=True)
  m=re.search(r'unsupported dispatch ([0-9a-f]{8})',run.stdout)
  if run.returncode!=77 or not m:break
  va=int(m[1],16)
