@@ -1,0 +1,17 @@
+{
+  "sha256": "04ab08dd8e8e1430b88331e7b2c6e3dc1ed450837ba285ce76fe5f752b7f907e",
+  "synthetic": false,
+  "native_machine": "arm64",
+  "platform": "darwin",
+  "passed": {
+    "rng": 1006,
+    "crt_rand": 1006,
+    "shuffle": 156
+  },
+  "total": 2168,
+  "oracle": "input x86 instructions in bounded Unicorn",
+  "limitations": [
+    "preallocated TLS only",
+    "selected functions only; no WinMain/menu/scenario"
+  ]
+}

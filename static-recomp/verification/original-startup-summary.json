@@ -1,0 +1,4 @@
+{
+  "exit": 77,
+  "stderr": "guest startup reached GetVersion\nunimplemented Win32 import KERNEL32.dll!HeapCreate from 008e96a5\n"
+}
