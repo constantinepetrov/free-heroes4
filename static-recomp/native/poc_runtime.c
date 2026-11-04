@@ -13,6 +13,7 @@ double g_st[8];int64_t g_st_i64[8];int g_fp_top;uint16_t g_fpu_cw=0x37f;int void
 unsigned char *h4_guest_base;
 ptrdiff_t g_mem_base;
 void (*recomp_yield_hook)(void);
+#ifndef H4_BOOTSTRAP_RUNTIME
 static uint32_t last_error=0x12345678;
 static void get_error(void){g_eax=last_error;g_esp+=4;}
 static void get_tls(void){if(MEM32(g_esp+4)!=0){fputs("unexpected TLS index\n",stderr);exit(3);}g_eax=0x01001000;g_esp+=8;}
@@ -74,3 +75,5 @@ int main(int argc,char** argv){
  }
  munmap(p,VOID_GUEST_SPAN);return 0;
 }
+
+#endif

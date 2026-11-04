@@ -36,11 +36,17 @@ def main():
     for name,va in named.items():
         if not name.isidentifier():raise ValueError("Invalid wrapper name")
         parts.append(f"void h4_{name}(void) {{ sub_{va:08X}(); }}")
+    parts.append("void (*h4_find_lifted(uint32_t va))(void) { switch (va) {")
+    for va in sorted(addresses):parts.append(f"case {va:#x}u: return sub_{va:08X};")
+    parts.append("default: return 0; }}")
     out.mkdir(parents=True,exist_ok=True);(out/"lifted.c").write_text("\n".join(parts)+"\n")
-    config=['#include <stdint.h>','extern unsigned char *h4_guest_base;','#define VOID_GUEST_BASE ((uintptr_t)h4_guest_base)']
+    config=['void (*h4_find_lifted(unsigned int va))(void);','#include <stdint.h>','extern unsigned char *h4_guest_base;','#define VOID_GUEST_BASE ((uintptr_t)h4_guest_base)']
     for name,value in manifest["iat"].items():
         if not name.isidentifier():raise ValueError("Invalid IAT macro")
         config.append(f"#define H4_{name.upper()} {int(value,0):#x}u")
+    config.append(f"#define H4_IMAGE_BASE {info.image_base:#x}u")
+    import pefile
+    config.append(f"#define H4_IMAGE_SIZE {pefile.PE(data=raw).OPTIONAL_HEADER.SizeOfImage:#x}u")
     if "startup" in named:
         config.append("#define H4_HAS_STARTUP 1")
         config.append("struct h4_import_name {uint32_t iat; const char* name;};")
