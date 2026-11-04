@@ -15,5 +15,8 @@
     "set_error": "0x97017c",
     "tls_index": "0xa89560",
     "get_version": "0x970108"
+  },
+  "milestones": {
+    "winmain": "0x8d2580"
   }
 }

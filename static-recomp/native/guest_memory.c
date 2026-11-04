@@ -224,6 +224,7 @@ uint32_t void_vm_alloc(uint32_t address, uint32_t size, uint32_t type, uint32_t 
         void_set_last_error(ERROR_INVALID_PARAMETER_);
         return 0;
     }
+    if (!address && (type & MEM_COMMIT_)) type |= MEM_RESERVE_;
     pthread_mutex_lock(&vm_lock);
     uint32_t result = 0;
     if (type & MEM_RESERVE_) {
@@ -300,6 +301,7 @@ int void_vm_free(uint32_t address, uint32_t size, uint32_t type)
         uint32_t first = page;
         uint32_t last = size ? (uint32_t)(((uint64_t)address + size - 1) >> 12) : first;
         if (!size) {
+            if (page_state[page] == ST_FREE || page_alloc[page] != page) { pthread_mutex_unlock(&vm_lock); void_set_last_error(87); return 0; }
             uint32_t base = page_alloc[page];
             first = base;
             last = base;
@@ -619,4 +621,21 @@ uint32_t void_gstrdup(const char *s)
     uint32_t va = void_galloc((uint32_t)n);
     if (va) memcpy(GPTR(va), s, n);
     return va;
+}
+
+/* The single-thread PoC advertises a 1 GiB guest RAM budget, not host Mac RAM. */
+void h4_memory_status(uint32_t out)
+{
+    uint64_t committed=0,free_pages=0;
+    pthread_mutex_lock(&vm_lock);
+    for(uint32_t p=16;p<(GUEST_USER_TOP>>12);p++){
+        if(page_state[p]==ST_COMMIT)committed+=4096;
+        if(page_state[p]==ST_FREE&&!granule_used[p>>4])free_pages+=4096;
+    }
+    pthread_mutex_unlock(&vm_lock);
+    const uint32_t physical=0x40000000u,total=GUEST_USER_TOP-0x10000;
+    MEM32(out)=32;MEM32(out+4)=(uint32_t)(committed>=physical?100:committed*100/physical);
+    MEM32(out+8)=physical;MEM32(out+12)=committed<physical?physical-(uint32_t)committed:0;
+    MEM32(out+16)=total;MEM32(out+20)=committed<total?total-(uint32_t)committed:0;
+    MEM32(out+24)=total;MEM32(out+28)=(uint32_t)free_pages;
 }

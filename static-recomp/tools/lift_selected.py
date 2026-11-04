@@ -32,6 +32,7 @@ def main():
         if len(ins)>10000:raise ValueError("Selected function exceeds the POC bound")
         body=lift_function_linear(lifter,f"sub_{va:08X}",ins,set(fn.blocks),va)
         if "UNIMPLEMENTED" in body:raise ValueError("Unchecked unsupported instruction")
+        body=body.replace(f"RECOMP_ENTER(0x{va:08X}u);",f"RECOMP_ENTER(0x{va:08X}u);\n#ifdef H4_BOOTSTRAP_RUNTIME\n    h4_record_entry(0x{va:08X}u);\n#endif")
         parts.append(body);counts[hex(va)]=len(ins)
     for name,va in named.items():
         if not name.isidentifier():raise ValueError("Invalid wrapper name")
@@ -40,13 +41,16 @@ def main():
     for va in sorted(addresses):parts.append(f"case {va:#x}u: return sub_{va:08X};")
     parts.append("default: return 0; }}")
     out.mkdir(parents=True,exist_ok=True);(out/"lifted.c").write_text("\n".join(parts)+"\n")
-    config=['void (*h4_find_lifted(unsigned int va))(void);','#include <stdint.h>','extern unsigned char *h4_guest_base;','#define VOID_GUEST_BASE ((uintptr_t)h4_guest_base)']
+    config=['void void_lift_trap(unsigned int va, const char *reason);','void h4_record_entry(unsigned int va);','void (*h4_find_lifted(unsigned int va))(void);','#include <stdint.h>','extern unsigned char *h4_guest_base;','#define VOID_GUEST_BASE ((uintptr_t)h4_guest_base)']
     for name,value in manifest["iat"].items():
         if not name.isidentifier():raise ValueError("Invalid IAT macro")
         config.append(f"#define H4_{name.upper()} {int(value,0):#x}u")
     config.append(f"#define H4_IMAGE_BASE {info.image_base:#x}u")
     import pefile
     config.append(f"#define H4_IMAGE_SIZE {pefile.PE(data=raw).OPTIONAL_HEADER.SizeOfImage:#x}u")
+    for name,value in manifest.get("milestones",{}).items():
+        if not name.isidentifier():raise ValueError("Invalid milestone")
+        config.append(f"#define H4_MILESTONE_{name.upper()} {int(value,0):#x}u")
     if "startup" in named:
         config.append("#define H4_HAS_STARTUP 1")
         config.append("struct h4_import_name {uint32_t iat; const char* name;};")
@@ -54,7 +58,8 @@ def main():
         config.append("static const struct h4_import_name h4_import_names[] = {"+",".join(entries or ["{0,(const char*)0}"])+"};")
         config.append(f"#define H4_IMPORT_COUNT {len(entries)}u")
     if "x87" in named:config.append("#define H4_HAS_X87 1")
-    for name in named:config.append(f"void h4_{name}(void);")
+    for name in named:
+        if not name.startswith("helper_"):config.append(f"void h4_{name}(void);")
     (out/"runtime_config.h").write_text("\n".join(config)+"\n")
     (out/"lift-summary.json").write_text(json.dumps({"sha256":digest,"h5_commit":revision,"functions":counts,"synthetic":args.synthetic},indent=2)+"\n")
     print(json.dumps({"functions":len(counts),"instructions":sum(counts.values()),"output":str(out),"synthetic":args.synthetic}))

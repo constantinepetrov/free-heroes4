@@ -16,6 +16,21 @@
 void void_log(const char *fmt, ...) __attribute__((format(printf,1,2)));
 _Noreturn void void_fatal(const char *fmt, ...) __attribute__((format(printf,1,2)));
 void void_set_last_error(uint32_t error);
+void h4_memory_status(uint32_t out);
+uint32_t h4_test_api(const char *name,unsigned count,...);
+void h4_need(uint32_t va,uint32_t size,int write);
+uint32_t h4_arg(unsigned n);
+const char *h4_string(uint32_t va);
+uint32_t h4_directdraw_create(uint32_t adapter,uint32_t out,uint32_t iid,uint32_t outer);
+recomp_func_t h4_ddraw_resolve(uint32_t va);
+int h4_ddraw_primary_io(int write,int x,int y,int w,int h,uint16_t *data,int stride);
+int h4_gdi_api(const char *name,uint32_t *result,unsigned *argc);
+int h4_window_api(const char *name,uint32_t *result,unsigned *argc);
+uint32_t h4_call_guest(uint32_t va,unsigned count,const uint32_t *args);
+uint32_t h4_pe_resource(unsigned type,int id,uint32_t *size);
+uint32_t h4_version_size(const char *path);
+int h4_version_copy(const char *path,uint32_t cap,uint32_t out);
+int h4_version_query(uint32_t block,const char *query,uint32_t out,uint32_t length);
 int void_guest_reserve(void);
 /* Win32 VirtualAlloc semantics on the guest window. Returns 0 on failure. */
 uint32_t void_vm_alloc(uint32_t address, uint32_t size, uint32_t type, uint32_t protect);
