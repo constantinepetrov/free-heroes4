@@ -120,6 +120,19 @@ static uint32_t environment_block(int wide) {
  for(unsigned i=0;i<128;i++)if(environment[i].name){const char *parts[]={environment[i].name,"=",environment[i].value};for(unsigned k=0;k<3;k++)for(const unsigned char *p=(const unsigned char*)parts[k];*p;p++){if(wide)MEM16(out+2*offset)=void_cp1252_to_u16(*p);else MEM8(out+offset)=*p;offset++;}offset++;}
  return out;
 }
+/* Diagnostic only: reject malformed or cyclic guest chains before dereferencing. */
+static void trace_seh(void) {
+ uint32_t rec=MEM32(g_fs_base),seen[64];unsigned n=0;
+ while(rec&&rec!=0xffffffffu&&n<64){
+  for(unsigned i=0;i<n;i++)if(seen[i]==rec){void_log("SEH chain cycle at %08x",rec);return;}
+  if(!void_vm_readable(rec,12)){void_log("SEH invalid frame %08x",rec);return;}
+  seen[n++]=rec;uint32_t handler=MEM32(rec+4);
+  void_log("SEH frame=%08x next=%08x handler=%08x state=%08x",rec,MEM32(rec),handler,MEM32(rec+8));
+  if(void_vm_readable(handler,11)&&MEM8(handler)==0xb8){uint32_t fi=MEM32(handler+1);if(void_vm_readable(fi,20))void_log("SEH candidate FuncInfo=%08x magic=%08x max=%u unwind=%08x tries=%u trymap=%08x",fi,MEM32(fi),MEM32(fi+4),MEM32(fi+8),MEM32(fi+12),MEM32(fi+16));}
+  rec=MEM32(rec);
+ }
+ if(n==64)void_log("SEH chain exceeds diagnostic limit");
+}
 static void invoke(void) {
  const char *full=active_import,*s=strchr(full,'!');s=s?s+1:full;
  uint32_t a,b,c,d,value=0;unsigned count=0;
@@ -137,7 +150,7 @@ static void invoke(void) {
  NEXT API("CoUninitialize",0) if(com_refs)--com_refs;
  NEXT API("CoCreateInstance",5) h4_need(h4_arg(1),16,0);h4_need(h4_arg(4),16,0);h4_need(h4_arg(5),4,1);MEM32(h4_arg(5))=0;void_log("COM class not registered in this host: %08x-%08x-%08x-%08x",MEM32(h4_arg(1)),MEM32(h4_arg(1)+4),MEM32(h4_arg(1)+8),MEM32(h4_arg(1)+12));value=0x80040154;
  NEXT API("MessageBoxA",4) void_log("original MessageBoxA flags=%08x title=%s text=%s",h4_arg(4),h4_arg(3)?h4_string(h4_arg(3)):"",h4_arg(2)?h4_string(h4_arg(2)):"");void_log("stopping before dialog response; no success is simulated");exit(77);
- NEXT API("RaiseException",4) void_log("original RaiseException code=%08x flags=%08x nargs=%u args=%08x caller=%08x",h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4),g_cur_func);if(h4_arg(3)<=15&&h4_arg(4)){h4_need(h4_arg(4),h4_arg(3)*4,0);for(unsigned i=0;i<h4_arg(3);i++)void_log("exception arg[%u]=%08x",i,MEM32(h4_arg(4)+4*i));}void_log("SEH dispatch is not implemented; stopping instead of reporting success");exit(77);
+ NEXT API("RaiseException",4) void_log("original RaiseException code=%08x flags=%08x nargs=%u args=%08x caller=%08x",h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4),g_cur_func);if(h4_arg(3)<=15&&h4_arg(4)){h4_need(h4_arg(4),h4_arg(3)*4,0);for(unsigned i=0;i<h4_arg(3);i++)void_log("exception arg[%u]=%08x",i,MEM32(h4_arg(4)+4*i));}trace_seh();void_log("SEH dispatch is not implemented; stopping instead of reporting success");exit(77);
  NEXT API("DirectDrawCreateEx",4) value=h4_directdraw_create(h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4));
  NEXT API("LoadImageA",6) if(h4_arg(3)==1||h4_arg(3)==2){void_log("optional icon/cursor LoadImageA unsupported, returning NULL/ERROR_NOT_SUPPORTED");void_set_last_error(50);}else void_fatal("unsupported LoadImageA type %u",h4_arg(3));
  NEXT API("GetFileVersionInfoSizeA",2) if(h4_arg(2)){h4_need(h4_arg(2),4,1);MEM32(h4_arg(2))=0;}value=h4_version_size(h4_string(h4_arg(1)));
@@ -294,6 +307,7 @@ static void selftest(void) {
 int main(int argc,char **argv) {
  if(argc!=2&&argc!=3){fputs("usage: bootstrap --selftest | image.bin\n",stderr);return 2;}init();if(!strcmp(argv[1],"--selftest")){selftesting=1;selftest();return 0;}
  if(!strcmp(argv[1],"--registry-read-test")){h4_test_registry(1);return 0;}
+ if(!strcmp(argv[1],"--seh-trace-test")){uint32_t old=MEM32(g_fs_base),rec=void_galloc(12);MEM32(rec)=rec;MEM32(rec+4)=0;MEM32(rec+8)=4;MEM32(g_fs_base)=rec;trace_seh();MEM32(g_fs_base)=old;void_gfree(rec);return 0;}
  if(!strcmp(argv[1],"--unknown-api")){active_import="KERNEL32.dll!UnsupportedSyntheticAPI";invoke();return 3;}
  if(!strcmp(argv[1],"--blocking-wait")){object_wait(object_create(1,0,0,0),0xffffffff);return 3;}
  if(!void_vm_claim(H4_IMAGE_BASE,H4_IMAGE_SIZE,4))void_fatal("image allocation failed");
