@@ -133,6 +133,16 @@ static void trace_seh(void) {
  }
  if(n==64)void_log("SEH chain exceeds diagnostic limit");
 }
+/* Metadata selection only: never unwind or claim that a catch has run. */
+static uint32_t eh_select(uint32_t fi,int state,uint32_t info){
+ h4_need(fi,20,0);h4_need(info,16,0);uint32_t nt=MEM32(fi+12),tb=MEM32(fi+16),arr=MEM32(info+12);h4_need(arr,4,0);uint32_t nc=MEM32(arr);
+ if(nt>256||nc>256||arr>0xffffffffu-4u-nc*4u)void_fatal("EH metadata range exceeds limit");if(nt)h4_need(tb,nt*20,0);if(nc)h4_need(arr+4,nc*4,0);
+ for(uint32_t t=0;t<nt;t++){uint32_t p=tb+t*20;int lo=(int32_t)MEM32(p),hi=(int32_t)MEM32(p+4);if(state<lo||state>hi)continue;uint32_t n=MEM32(p+12),hs=MEM32(p+16);if(n>256)void_fatal("EH catch count exceeds limit");if(n)h4_need(hs,n*16,0);
+  for(uint32_t c=0;c<n;c++){uint32_t h=hs+c*16,type=MEM32(h+4);if(!type)return MEM32(h+12);h4_need(type,9,0);const char *name=h4_string(type+8);
+   for(uint32_t j=0;j<nc;j++){uint32_t ct=MEM32(arr+4+j*4);h4_need(ct,8,0);uint32_t td=MEM32(ct+4);h4_need(td,9,0);if(!strcmp(name,h4_string(td+8)))return MEM32(h+12);}
+  }
+ }return 0;
+}
 static void invoke(void) {
  const char *full=active_import,*s=strchr(full,'!');s=s?s+1:full;
  uint32_t a,b,c,d,value=0;unsigned count=0;
@@ -150,7 +160,7 @@ static void invoke(void) {
  NEXT API("CoUninitialize",0) if(com_refs)--com_refs;
  NEXT API("CoCreateInstance",5) h4_need(h4_arg(1),16,0);h4_need(h4_arg(4),16,0);h4_need(h4_arg(5),4,1);MEM32(h4_arg(5))=0;void_log("COM class not registered in this host: %08x-%08x-%08x-%08x",MEM32(h4_arg(1)),MEM32(h4_arg(1)+4),MEM32(h4_arg(1)+8),MEM32(h4_arg(1)+12));value=0x80040154;
  NEXT API("MessageBoxA",4) void_log("original MessageBoxA flags=%08x title=%s text=%s",h4_arg(4),h4_arg(3)?h4_string(h4_arg(3)):"",h4_arg(2)?h4_string(h4_arg(2)):"");void_log("stopping before dialog response; no success is simulated");exit(77);
- NEXT API("RaiseException",4) void_log("original RaiseException code=%08x flags=%08x nargs=%u args=%08x caller=%08x",h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4),g_cur_func);if(h4_arg(3)<=15&&h4_arg(4)){h4_need(h4_arg(4),h4_arg(3)*4,0);for(unsigned i=0;i<h4_arg(3);i++)void_log("exception arg[%u]=%08x",i,MEM32(h4_arg(4)+4*i));}trace_seh();void_log("SEH dispatch is not implemented; stopping instead of reporting success");exit(77);
+ NEXT API("RaiseException",4) void_log("original RaiseException code=%08x flags=%08x nargs=%u args=%08x caller=%08x",h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4),g_cur_func);if(h4_arg(3)<=15&&h4_arg(4)){h4_need(h4_arg(4),h4_arg(3)*4,0);for(unsigned i=0;i<h4_arg(3);i++)void_log("exception arg[%u]=%08x",i,MEM32(h4_arg(4)+4*i));}trace_seh();if(h4_arg(3)==3&&h4_arg(4)&&MEM32(h4_arg(4))==0x19930520u){uint32_t rec=MEM32(g_fs_base);if(void_vm_readable(rec,12)){uint32_t handler=MEM32(rec+4);if(void_vm_readable(handler,11)&&MEM8(handler)==0xb8){uint32_t fi=MEM32(handler+1);uint32_t chosen=eh_select(fi,(int32_t)MEM32(rec+8),MEM32(h4_arg(4)+8));void_log("EH selected original catch=%08x (not executed)",chosen);}}}void_log("SEH dispatch is not implemented; stopping instead of reporting success");exit(77);
  NEXT API("DirectDrawCreateEx",4) value=h4_directdraw_create(h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4));
  NEXT API("LoadImageA",6) if(h4_arg(3)==1||h4_arg(3)==2){void_log("optional icon/cursor LoadImageA unsupported, returning NULL/ERROR_NOT_SUPPORTED");void_set_last_error(50);}else void_fatal("unsupported LoadImageA type %u",h4_arg(3));
  NEXT API("GetFileVersionInfoSizeA",2) if(h4_arg(2)){h4_need(h4_arg(2),4,1);MEM32(h4_arg(2))=0;}value=h4_version_size(h4_string(h4_arg(1)));
@@ -300,6 +310,7 @@ static void selftest(void) {
  uint32_t text=void_galloc(16),out=void_galloc(32);MEM8(text)=0xdf;MEM8(text+1)=0;assert(h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,16u)==2&&MEM16(out)==0x42f&&!MEM16(out+2));assert(h4_test_api("KERNEL32.dll!WideCharToMultiByte",8,1251u,0u,out,0xffffffffu,text,16u,0u,0u)==2&&MEM8(text)==0xdf);assert(!h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,1u)&&last_error==122);MEM16(text)='A';MEM16(text+2)=' ';MEM16(text+4)=0;assert(h4_test_api("KERNEL32.dll!GetStringTypeW",4,1u,text,0xffffffffu,out));assert(MEM16(out)==0x381&&MEM16(out+2)==0x248&&MEM16(out+4)==0x20);assert(h4_test_api("KERNEL32.dll!LCMapStringW",6,0x409u,0x100u,text,0xffffffffu,out,16u)==3&&MEM16(out)=='a');void_gfree(text);void_gfree(out);
  assert(!h4_test_api("ole32.dll!CoInitializeEx",2,0u,2u));assert(h4_test_api("ole32.dll!CoInitializeEx",2,0u,2u)==1);assert(h4_test_api("ole32.dll!CoInitializeEx",2,0u,0u)==0x80010106);h4_test_api("ole32.dll!CoUninitialize",0);h4_test_api("ole32.dll!CoUninitialize",0);
  uint32_t audio_out=void_galloc(4);MEM32(audio_out)=0xffffffffu;assert(h4_test_api("DSOUND.dll!ordinal_1",3,0u,audio_out,0u)==0x88780078u&&!MEM32(audio_out));void_gfree(audio_out);assert(!h4_test_api("binkw32.dll!_BinkSetSoundSystem@8",2,0u,0u));assert(!h4_test_api("binkw32.dll!_BinkOpen@8",2,0u,0u));
+ uint32_t em=void_galloc(256);memset(GPTR(em),0,256);uint32_t fi=em,tb=em+24,hs=em+44,info=em+64,arr=em+80,ct=em+96,td=em+112,other=em+144;MEM32(fi+12)=1;MEM32(fi+16)=tb;MEM32(tb)=2;MEM32(tb+4)=4;MEM32(tb+12)=1;MEM32(tb+16)=hs;MEM32(hs+4)=td;MEM32(hs+12)=0x1234;MEM32(info+12)=arr;MEM32(arr)=1;MEM32(arr+4)=ct;MEM32(ct+4)=other;memcpy(GPTR(td+8),"._N",4);memcpy(GPTR(other+8),"._N",4);assert(eh_select(fi,4,info)==0x1234);assert(!eh_select(fi,5,info));MEM8(other+9)='X';assert(!eh_select(fi,4,info));MEM32(hs+4)=0;assert(eh_select(fi,4,info)==0x1234);void_gfree(em);puts("PASS EH typed matching, non-match and catch-all selection");
  uint32_t env_name=void_gstrdup("H4_STATE_DIR"),env_value=void_gstrdup("C:\\Different"),env_out=void_galloc(64);const char *host_state=getenv("H4_STATE_DIR");assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,env_value));assert(getenv("H4_STATE_DIR")==host_state);assert(h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u)==12&&!strcmp(GPTR(env_out),"C:\\Different"));uint32_t block=h4_test_api("KERNEL32.dll!GetEnvironmentStringsW",0);assert(block&&MEM16(block)=='H');assert(h4_test_api("KERNEL32.dll!FreeEnvironmentStringsW",1,block));assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,0u));assert(!h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u));void_gfree(env_name);void_gfree(env_value);void_gfree(env_out);
  h4_test_version();window_selftest();h4_test_registry(0);h4_test_files();
  puts("PASS guest heap, VM, TLS, event, mutex, critical section, CP1251/1252, CTYPE1 and stdcall tests");
