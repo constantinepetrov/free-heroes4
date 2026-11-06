@@ -4,7 +4,10 @@ p=argparse.ArgumentParser();p.add_argument('--h5',type=pathlib.Path,required=Tru
 r=pathlib.Path(__file__).resolve().parents[2];out=a.output.resolve();lift=a.lifted.resolve();h5=a.h5.resolve()
 if out==r or r in out.parents or out==lift/'lifted.c' or out==lift/'runtime_config.h':p.error('Build output must stay outside Git and preserve generated inputs')
 cache=out.parent/'bootstrap-build';cache.mkdir(parents=True,exist_ok=True);tmp=cache/'tmp';tmp.mkdir(exist_ok=True);env=dict(os.environ,TMPDIR=str(tmp))
-code=(lift/'lifted.c').read_text();matches=list(re.finditer(r'^void sub_([0-9A-F]{8})\(void\) \{',code,re.M))
+code=(lift/'lifted.c').read_text()
+# shortcut: the EH dispatcher is not connected; remove this guard after EH execution tests pass.
+if 'RECOMP_EH_ENTER();' in code:raise SystemExit('EH landing pads require an EH-capable runtime; bootstrap dispatch is not implemented')
+matches=list(re.finditer(r'^void sub_([0-9A-F]{8})\(void\) \{',code,re.M))
 if not matches:raise SystemExit('No generated function bodies')
 last=code.index('\nvoid h4_',matches[-1].end());groups={}
 for i,m in enumerate(matches):

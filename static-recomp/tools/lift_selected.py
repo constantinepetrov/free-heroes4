@@ -5,7 +5,7 @@ H5_COMMIT = "6dc7914d7529d92beaf323c0f88a5102b4d0fd69"
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--h5",type=pathlib.Path,required=True)
     ap.add_argument("--exe",type=pathlib.Path,required=True);ap.add_argument("--manifest",type=pathlib.Path,required=True)
-    ap.add_argument("--output",type=pathlib.Path,required=True);ap.add_argument("--synthetic",action="store_true")
+    ap.add_argument("--output",type=pathlib.Path,required=True);ap.add_argument("--synthetic",action="store_true");ap.add_argument("--eh",action="store_true",help="experimental EH landing pads; requires an EH-capable host")
     args=ap.parse_args();repo=pathlib.Path(__file__).resolve().parents[2];out=args.output.resolve()
     if {args.exe.resolve(),args.manifest.resolve()} & {out/"lifted.c",out/"runtime_config.h",out/"lift-summary.json"}:ap.error("Generated output would overwrite an input file")
     if out==repo or repo in out.parents:ap.error("Output must be outside this Git checkout")
@@ -16,21 +16,37 @@ def main():
     digest=hashlib.sha256(raw).hexdigest()
     if digest!=manifest["sha256"]:ap.error("PE hash differs from the reviewed manifest")
     if args.synthetic and not manifest.get("synthetic"):ap.error("Not a synthetic fixture")
-    sys.path.insert(0,str(args.h5/"tools"));from lift_game import CheckedLifter,lift_function_linear
+    sys.path.insert(0,str(args.h5/"tools"));from lift_game import CheckedLifter,lift_function_linear,complete_eh_owner
     from tools.pe.pe_analyze import analyze_pe,build_iat_map
     from tools.disasm.disasm32 import Disassembler
     info=analyze_pe(str(args.exe))
     if info.machine!="i386" or info.pe_type!="PE32":ap.error("Only reviewed PE32 i386 inputs are supported")
     iat=build_iat_map(info);dis=Disassembler(raw,info.image_base,info.sections)
     named={k:int(v,0) for k,v in manifest["functions"].items()};addresses=set(named.values())
+    functions={}
+    pending=set(addresses)
+    while pending:
+        va=min(pending);pending.remove(va)
+        fn=dis.disassemble_function(va,iat)
+        if fn is None:raise ValueError(f"No decoded function at {va:#x}")
+        if args.eh:
+            before=set(fn.calls_to)
+            complete_eh_owner(dis,fn,iat)
+            for target in fn.calls_to-before:
+                if target not in addresses and dis.is_code_address(target):
+                    if len(addresses)>=10000:raise ValueError("EH function set exceeds the POC bound")
+                    addresses.add(target);pending.add(target)
+        functions[va]=fn
     lifter=CheckedLifter(iat_map=iat,lifted=addresses,precise_sbb=True,precise_carry=True)
     parts=['#include "recomp_types.h"']+[f'void sub_{va:08X}(void);' for va in sorted(addresses)];counts={}
     for va in sorted(addresses):
-        fn=dis.disassemble_function(va,iat)
-        if fn is None:raise ValueError(f"No decoded function at {va:#x}")
+        fn=functions[va]
         ins=sorted({i.address:i for b in fn.blocks.values() for i in b.instructions}.values(),key=lambda i:i.address)
         if len(ins)>10000:raise ValueError("Selected function exceeds the POC bound")
-        body=lift_function_linear(lifter,f"sub_{va:08X}",ins,set(fn.blocks),va)
+        body=lift_function_linear(lifter,f"sub_{va:08X}",ins,set(fn.blocks),va,**({"indirect_targets":fn.jump_targets,"eh_resume":fn.eh_resume} if args.eh else {}))
+        if args.eh and fn.eh_resume and fn.eh_frame_bias:
+            assert body.count("    RECOMP_EH_ENTER();")==1
+            body=body.replace("    RECOMP_EH_ENTER();", "    RECOMP_EH_ENTER();\n"+f"    _ehf.entry_esp -= 0x{fn.eh_frame_bias:X}u;")
         if "UNIMPLEMENTED" in body:raise ValueError("Unchecked unsupported instruction")
         body=body.replace(f"RECOMP_ENTER(0x{va:08X}u);",f"RECOMP_ENTER(0x{va:08X}u);\n#ifdef H4_BOOTSTRAP_RUNTIME\n    h4_record_entry(0x{va:08X}u);\n#endif")
         parts.append(body);counts[hex(va)]=len(ins)
