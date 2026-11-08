@@ -1,7 +1,8 @@
 """Private, bounded on-demand lifting of unresolved main-image functions. Never executes PE."""
-import argparse,json,pathlib,re,subprocess,sys,os
-p=argparse.ArgumentParser();p.add_argument('--tested-eh',action='store_true',help='explicitly enable EH after passing synthetic tests');p.add_argument('--eh',action='store_true',help='generate experimental EH landing pads; bootstrap is not yet EH-capable');p.add_argument('--catalog',type=pathlib.Path);p.add_argument('--h5',type=pathlib.Path,required=True);p.add_argument('--exe',type=pathlib.Path,required=True);p.add_argument('--manifest',type=pathlib.Path,required=True);p.add_argument('--image',type=pathlib.Path,required=True);p.add_argument('--work',type=pathlib.Path,required=True);p.add_argument('--steps',type=int,default=40);a=p.parse_args()
+import argparse,hashlib,json,pathlib,re,subprocess,sys,os
+p=argparse.ArgumentParser();p.add_argument('--tested-eh',action='store_true',help='explicitly enable EH after passing synthetic tests');p.add_argument('--eh',action='store_true',help='generate experimental EH landing pads; bootstrap is not yet EH-capable');p.add_argument('--catalog',type=pathlib.Path);p.add_argument('--h5',type=pathlib.Path,required=True);p.add_argument('--exe',type=pathlib.Path,required=True);p.add_argument('--manifest',type=pathlib.Path,required=True);p.add_argument('--image',type=pathlib.Path,required=True);p.add_argument('--work',type=pathlib.Path,required=True);p.add_argument('--steps',type=int,default=40);p.add_argument('--probe-address',type=lambda s:int(s,0),help='require the linked startup to resolve this guest address before running');a=p.parse_args()
 if a.tested_eh and not a.eh:p.error('--tested-eh requires --eh')
+if a.probe_address is not None and not 0<=a.probe_address<=0xffffffff:p.error('probe address must be a 32-bit guest VA')
 r=pathlib.Path(__file__).resolve().parents[2];work=a.work.resolve()
 if work==r or r in work.parents:p.error('Private output must be outside Git')
 work.mkdir(parents=True,exist_ok=True);mp=work/'manifest.json'
@@ -19,7 +20,17 @@ if a.catalog:
 for step in range(a.steps):
  subprocess.run([sys.executable,str(r/'static-recomp/tools/lift_selected.py'),'--h5',str(a.h5),'--exe',str(a.exe),'--manifest',str(mp),'--output',str(work/'lifted'),*(['--synthetic'] if json.loads(mp.read_text()).get('synthetic') else []),*(['--eh'] if a.eh else [])],check=True)
  subprocess.run([sys.executable,str(r/'static-recomp/tools/build_bootstrap.py'),'--h5',str(a.h5),'--lifted',str(work/'lifted'),'--output',str(work/'startup'),*(['--tested-eh'] if a.tested_eh else [])],check=True)
- try:run=subprocess.run([str(work/'startup'),str(a.image)],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20,env=run_env)
+ startup=(work/'startup').resolve()
+ if a.probe_address is not None:
+  # The probe runs the same freshly linked executable as the subsequent scenario run.
+  digest=hashlib.sha256(startup.read_bytes()).hexdigest()
+  probe=subprocess.run([str(startup),'--dispatch-probe',hex(a.probe_address)],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20,env=run_env)
+  report=f"startup={startup}\\nsha256={digest}\\nprobe_address={a.probe_address:08x}\\nexit_code={probe.returncode}\\n"+probe.stdout
+  (work/'dispatch-probe.txt').write_text(report)
+  print(report,flush=True)
+  if probe.returncode or f"dispatch probe {a.probe_address:08x}: FOUND" not in probe.stdout:
+   raise SystemExit('Required dispatch target missing in freshly linked startup; refusing to run original game')
+ try:run=subprocess.run([str(startup),str(a.image)],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20,env=run_env)
  except subprocess.TimeoutExpired as e:
   print('Startup timeout; preserve diagnostics, do not assume progress');(work/'startup-timeout.txt').write_bytes(e.stdout or b'');break
  (work/f'step-{step:03}.txt').write_text(run.stdout);(work/'last-startup.txt').write_text(run.stdout);important=[line for line in run.stdout.splitlines() if any(word in line for word in ["unsupported dispatch","unimplemented ","guest fault","lift trap","execution summary:","original MessageBoxA","Captured ","DirectDraw present","RaiseException"])]
