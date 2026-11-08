@@ -40,10 +40,15 @@ static struct eh_binding eh_binding_plan(uint32_t handler,uint32_t info,uint32_t
 }
 static void eh_bind(struct eh_binding p){if(!p.dst)return;if(p.reference)MEM32(p.dst)=p.src;else memmove(GPTR(p.dst),GPTR(p.src),p.size);}
 /* shortcut: frames without a live landing pad and nontrivial catch copies fail closed. */
-static struct {recomp_ehframe_t *frame;unsigned depth;uint32_t bx,si,di,owner;} eh_frames[128];
+/* Guest call entries preserve nonvolatile registers even between SEH owners. */
+static struct {uint32_t va,bx,si,di;} eh_calls[4096];
+static unsigned eh_call_count;
+void h4_eh_call_enter(uint32_t va){if(eh_call_count==4096)void_fatal("EH guest call depth limit");eh_calls[eh_call_count++]=(typeof(eh_calls[0])){va,g_ebx,g_esi,g_edi};}
+void h4_eh_call_leave(uint32_t va){if(!eh_call_count||eh_calls[eh_call_count-1].va!=va)void_fatal("EH guest call frame mismatch");--eh_call_count;}
+static struct {recomp_ehframe_t *frame;unsigned depth,call_index;uint32_t bx,si,di,owner;} eh_frames[128];
 static struct {uint32_t obj,info,bx,si,di;unsigned owner;} eh_contexts[32];
 unsigned eh_frame_count,eh_context_count;
-void recomp_eh_push(recomp_ehframe_t *f){f->resume=0;if(eh_frame_count==128)void_fatal("EH landing frame limit");f->prev=eh_frame_count?eh_frames[eh_frame_count-1].frame:NULL;eh_frames[eh_frame_count++]=(typeof(eh_frames[0])){f,eh_context_count,g_ebx,g_esi,g_edi,g_cur_func};}
+void recomp_eh_push(recomp_ehframe_t *f){f->resume=0;if(eh_frame_count==128)void_fatal("EH landing frame limit");f->prev=eh_frame_count?eh_frames[eh_frame_count-1].frame:NULL;eh_frames[eh_frame_count++]=(typeof(eh_frames[0])){f,eh_context_count,eh_call_count?eh_call_count-1:0xffffffffu,g_ebx,g_esi,g_edi,g_cur_func};}
 void recomp_eh_pop(recomp_ehframe_t *f){if(!eh_frame_count||eh_frames[eh_frame_count-1].frame!=f)void_fatal("invalid EH landing frame pop");--eh_frame_count;}
 void h4_eh_throw(uint32_t obj,uint32_t info){
  if(!info){if(!eh_context_count)void_fatal("EH rethrow outside catch");obj=eh_contexts[eh_context_count-1].obj;info=eh_contexts[eh_context_count-1].info;}
@@ -59,8 +64,11 @@ void h4_eh_throw(uint32_t obj,uint32_t info){
  uint32_t max_state=MEM32(fi+4);if(low<0||high<low||(uint32_t)high>=max_state)void_fatal("invalid EH try state range");
  int frame_index=frames[count-1];if(frame_index<0||eh_frames[frame_index].frame->resume==0xffffffffu)void_fatal("EH owner has no landing pad");if(eh_context_count==32)void_fatal("EH context limit");
  for(unsigned i=0;i<count;i++){if(frames[i]<0)void_fatal("EH crossed frame has no live landing pad");if(i&&frames[i]>=frames[i-1])void_fatal("EH frame order mismatch");eh_validate_unwind(chain[i],infos[i],i+1==count?low:-1);}
+ unsigned call_index=eh_frames[frame_index].call_index;uint32_t target_bx=g_ebx,target_si=g_esi,target_di=g_edi;
+ if(call_index!=0xffffffffu){if(call_index>=eh_call_count||eh_calls[call_index].va!=eh_frames[frame_index].owner)void_fatal("EH owner call frame is not live");if(call_index+1<eh_call_count){target_bx=eh_calls[call_index+1].bx;target_si=eh_calls[call_index+1].si;target_di=eh_calls[call_index+1].di;}}
  while(eh_context_count&&eh_contexts[eh_context_count-1].owner>(unsigned)frame_index)--eh_context_count;
- for(unsigned i=0;i<count;i++){eh_unwind(chain[i],infos[i],i+1==count?low:-1);if(i+1<count){g_ebx=eh_frames[frames[i]].bx;g_esi=eh_frames[frames[i]].si;g_edi=eh_frames[frames[i]].di;}}
+ for(unsigned i=0;i<count;i++){eh_unwind(chain[i],infos[i],i+1==count?low:-1);if(call_index==0xffffffffu&&i+1<count){target_bx=eh_frames[frames[i]].bx;target_si=eh_frames[frames[i]].si;target_di=eh_frames[frames[i]].di;}}
+ g_ebx=target_bx;g_esi=target_si;g_edi=target_di;if(call_index!=0xffffffffu)eh_call_count=call_index+1;eh_frame_count=(unsigned)frame_index+1;
  uint32_t guest_bp=rec+12;MEM32(g_fs_base)=rec;MEM32(rec+8)=(uint32_t)(high+1);eh_bind(binding);
  eh_contexts[eh_context_count++]=(typeof(eh_contexts[0])){obj,info,g_ebx,g_esi,g_edi,(unsigned)frame_index};
  uint32_t old_sp=g_esp,old_bp=g_ebp;recomp_func_t fn=void_resolve(target);g_ebp=guest_bp;g_esp-=4;h4_need(g_esp,4,1);MEM32(g_esp)=0;

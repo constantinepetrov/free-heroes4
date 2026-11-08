@@ -5,8 +5,10 @@ fixture,h5,out=map(pathlib.Path,sys.argv[1:]);out.mkdir(parents=True,exist_ok=Tr
 raw=bytearray((fixture/'synthetic.pe').read_bytes())
 # A conventional MSVC6 registration, an independent catch and a cold continuation.
 prefix=bytes.fromhex('558bec6aff680012400064a100000000506489250000000083ec048965f0c745fc00000000')
-owner=prefix+b'\xe8'+struct.pack('<i',0x401100-(0x401000+len(prefix)+5))+bytes.fromhex('c9c3');raw[0x200:0x200+len(owner)]=owner
+owner=prefix+b'\xe8'+struct.pack('<i',0x401180-(0x401000+len(prefix)+5))+bytes.fromhex('c9c3');raw[0x200:0x200+len(owner)]=owner
 inner=bytes.fromhex('558bec6aff684012400064a100000000506489250000000083ec048965f0c745fc00000000bbbc0a0000beef0d0000bf89070000ff150c204000c9c3');raw[0x300:0x300+len(inner)]=inner
+middle_prefix=bytes.fromhex('535657bb11111111be22222222bf33333333')
+middle=middle_prefix+b'\xe8'+struct.pack('<i',0x401100-(0x401180+len(middle_prefix)+5))+bytes.fromhex('5f5e5bc3');raw[0x380:0x380+len(middle)]=middle
 raw[0x440:0x44a]=bytes.fromhex('b800154000e906000000');raw[0x450]=0xc3
 struct.pack_into('<5I',raw,0x700,0x19930520,1,0x401520,0,0)
 struct.pack_into('<2I',raw,0x720,0xffffffff,0x401380)
@@ -26,7 +28,7 @@ struct.pack_into('<4I',raw,0x898,0,0,0,0x401350)
 struct.pack_into('<4I',raw,0x8b0,0,0,0,0x4020c0)
 struct.pack_into('<I',raw,0x8c0,0)
 exe=out/'fixture.pe';exe.write_bytes(raw);image=out/'fixture-image.bin';image.write_bytes(pefile.PE(data=bytes(raw)).get_memory_mapped_image().ljust(0x3000,b"\0"))
-m=json.loads((fixture/'manifest.json').read_text());m['sha256']=hashlib.sha256(raw).hexdigest();m['functions']={'startup':'0x401000','inner':'0x401100','cleanup':'0x401380','cleanup_outer':'0x4013a0'}
+m=json.loads((fixture/'manifest.json').read_text());m['sha256']=hashlib.sha256(raw).hexdigest();m['functions']={'startup':'0x401000','inner':'0x401100','middle':'0x401180','cleanup':'0x401380','cleanup_outer':'0x4013a0'}
 manifest=out/'manifest.json';manifest.write_text(json.dumps(m))
 repo=pathlib.Path(__file__).resolve().parents[2];lifted=out/'lifted'
 subprocess.run([sys.executable,str(repo/'static-recomp/tools/lift_selected.py'),'--h5',str(h5),'--exe',str(exe),'--manifest',str(manifest),'--output',str(lifted),'--synthetic','--eh'],check=True)

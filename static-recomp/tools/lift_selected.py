@@ -89,6 +89,13 @@ def main():
         if args.eh and fn.eh_resume and fn.eh_frame_bias:
             assert body.count("    RECOMP_EH_ENTER();")==1
             body=body.replace("    RECOMP_EH_ENTER();", "    RECOMP_EH_ENTER();\n"+f"    _ehf.entry_esp -= 0x{fn.eh_frame_bias:X}u;")
+        if args.eh:
+            marker=f"RECOMP_ENTER(0x{va:08X}u);"
+            assert body.count(marker)==1
+            body=body.replace(marker,marker+f"\n    h4_eh_call_enter(0x{va:08X}u);")
+            body=body.replace('RECOMP_REGS_OUT(); return;', f'h4_eh_call_leave(0x{va:08X}u); RECOMP_REGS_OUT(); return;')
+            assert body.endswith('RECOMP_REGS_OUT();\n}')
+            body=body[:-len('RECOMP_REGS_OUT();\n}')]+f'h4_eh_call_leave(0x{va:08X}u); RECOMP_REGS_OUT();\n}}'
         if "UNIMPLEMENTED" in body:raise ValueError("Unchecked unsupported instruction")
         body=body.replace(f"RECOMP_ENTER(0x{va:08X}u);",f"RECOMP_ENTER(0x{va:08X}u);\n#ifdef H4_BOOTSTRAP_RUNTIME\n    h4_record_entry(0x{va:08X}u);\n#endif")
         parts.append(body);counts[hex(va)]=len(ins)
@@ -106,7 +113,7 @@ def main():
             parts.append(f"case {va:#x}u: return {tests};")
     parts.append("default: return 0; }}")
     out.mkdir(parents=True,exist_ok=True);(out/"lifted.c").write_text("\n".join(parts)+"\n")
-    config=['int h4_eh_resume_allowed(unsigned int owner, unsigned int va);','void void_lift_trap(unsigned int va, const char *reason);','void h4_record_entry(unsigned int va);','void (*h4_find_lifted(unsigned int va))(void);','#include <stdint.h>','extern unsigned char *h4_guest_base;','#define VOID_GUEST_BASE ((uintptr_t)h4_guest_base)']
+    config=['void h4_eh_call_enter(unsigned int va);','void h4_eh_call_leave(unsigned int va);','int h4_eh_resume_allowed(unsigned int owner, unsigned int va);','void void_lift_trap(unsigned int va, const char *reason);','void h4_record_entry(unsigned int va);','void (*h4_find_lifted(unsigned int va))(void);','#include <stdint.h>','extern unsigned char *h4_guest_base;','#define VOID_GUEST_BASE ((uintptr_t)h4_guest_base)']
     for name,value in manifest["iat"].items():
         if not name.isidentifier():raise ValueError("Invalid IAT macro")
         config.append(f"#define H4_{name.upper()} {int(value,0):#x}u")
