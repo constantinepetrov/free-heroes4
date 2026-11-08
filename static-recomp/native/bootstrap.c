@@ -286,7 +286,7 @@ static void window_selftest(void) {
  MEM32(rect)=12;MEM32(rect+4)=34;assert(h4_test_api("USER32.dll!ClientToScreen",2,win,rect)&&MEM32(rect)==12&&MEM32(rect+4)==34);assert(h4_test_api("USER32.dll!BeginPaint",2,win,rect)==0x51000000&&MEM32(rect+16)==320&&MEM32(rect+20)==200);assert(h4_test_api("USER32.dll!EndPaint",2,win,rect));assert(h4_test_api("USER32.dll!GetCursorPos",1,rect));assert(!h4_test_api("USER32.dll!GetKeyState",1,0x1bu));
  assert(h4_test_api("USER32.dll!GetClientRect",2,win,rect)&&MEM32(rect+8)==320&&MEM32(rect+12)==200);
  assert(!h4_test_api("USER32.dll!SetWindowLongA",3,win,0xffffffebu,42u));assert(h4_test_api("USER32.dll!SetWindowLongA",3,win,0xffffffebu,0u)==42);
- h4_test_api("USER32.dll!ShowWindow",2,win,1u);assert(h4_test_api("USER32.dll!GetActiveWindow",0)==win);
+ h4_test_api("USER32.dll!ShowWindow",2,win,1u);assert(h4_test_api("USER32.dll!GetActiveWindow",0)==win);assert(h4_test_api("USER32.dll!WindowFromPoint",2,0u,0u)==win);assert(h4_test_api("USER32.dll!WindowFromPoint",2,319u,199u)==win);assert(!h4_test_api("USER32.dll!WindowFromPoint",2,320u,199u));assert(!h4_test_api("USER32.dll!WindowFromPoint",2,0xffffffffu,0u));
  assert(!h4_test_api("USER32.dll!MsgWaitForMultipleObjects",5,0u,0u,0u,0u,0xffu));
  unsigned messages=0;while(h4_test_api("USER32.dll!PeekMessageA",5,rect,0u,0u,0u,1u)){assert(++messages<128);h4_test_api("USER32.dll!DispatchMessageA",1,rect);}
  unsigned key_messages=0;h4_test_push_key_pair(27);while(h4_test_api("USER32.dll!PeekMessageA",5,rect,0u,0u,0u,1u)){uint32_t msg=MEM32(rect+4);if(msg==0x100||msg==0x101){assert(MEM32(rect+8)==0x1b);assert(h4_test_api("USER32.dll!GetKeyState",1,0x1bu)==(msg==0x100?0x8000u:0));key_messages++;}h4_test_api("USER32.dll!DispatchMessageA",1,rect);}assert(key_messages==2);

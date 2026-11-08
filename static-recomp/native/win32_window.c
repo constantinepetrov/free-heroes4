@@ -83,6 +83,8 @@ int h4_window_api(const char *name,uint32_t *result,unsigned *argc) {
  NEXT API("DefWindowProcA",4) a=arg(2);if(a==0x81)value=1;else if(a==0x10){if(window){h4_surface_window_closed();SDL_DestroyWindow(window);window=NULL;active=0;}post(0,0x12,0,0);}
  NEXT API("SetWindowLongA",3) if(arg(1)!=HWND){void_set_last_error(1400);}else{a=arg(2);if(a==0xfffffffc){value=wndproc;wndproc=arg(3);}else if(a==0xffffffeb){value=user_data;user_data=arg(3);}else if(a==0xfffffff0){value=style;style=arg(3);}else if(a==0xffffffec){value=ex_style;ex_style=arg(3);}else void_fatal("unsupported SetWindowLongA index %08x",a);}
  NEXT API("ClientToScreen",2) if(!window||arg(1)!=HWND)void_set_last_error(1400);else{need(arg(2),8,1);MEM32(arg(2))+=(uint32_t)window_x;MEM32(arg(2)+4)+=(uint32_t)window_y;value=1;}
+ /* shortcut: one guest window only; add stacking and child-window hit tests when multiple windows exist. */
+ NEXT API("WindowFromPoint",2) if(window&&!(SDL_GetWindowFlags(window)&SDL_WINDOW_HIDDEN)){int w,h;if(SDL_GetWindowSize(window,&w,&h)){int64_t x=(int32_t)arg(1),y=(int32_t)arg(2);if(x>=window_x&&y>=window_y&&x<(int64_t)window_x+w&&y<(int64_t)window_y+h)value=HWND;}}
  NEXT API("GetCursorPos",1) need(arg(1),8,1);float x,y;SDL_GetMouseState(&x,&y);MEM32(arg(1))=(uint32_t)((int)x+window_x);MEM32(arg(1)+4)=(uint32_t)((int)y+window_y);value=1;
  NEXT API("GetKeyState",1) a=arg(1);if(a<256&&win_keys[a])value=0x8000;
  NEXT API("SetCapture",1) if(arg(1)!=HWND||!window)void_set_last_error(1400);else if(SDL_CaptureMouse(true)){value=capture;capture=HWND;}else void_set_last_error(50);
