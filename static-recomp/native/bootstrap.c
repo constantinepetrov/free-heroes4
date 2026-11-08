@@ -160,6 +160,13 @@ static void invoke(void) {
  NEXT API("_BinkSetSoundSystem@8",2) void_log("Bink audio unavailable: returning initialization failure");value=0;
  NEXT API("_BinkSetSoundTrack@4",1) void_log("Bink optional soundtrack selection %u (no decoder active)",h4_arg(1));
  NEXT API("_BinkOpen@8",2) void_log("Bink decoder unavailable: returning NULL for optional intro (flags=%08x)",h4_arg(2));value=0;
+ /* Disabled optional video has no BINK statistics. Never invent a live decoder or a frame. */
+ NEXT API("_BinkGetSummary@8",2) a=h4_arg(1);b=h4_arg(2);
+  if(a){void_log("BinkGetSummary requires a decoder for non-NULL handle %08x from %08x",a,g_cur_func);exit(77);}
+  if(!b)void_fatal("BinkGetSummary NULL output buffer");
+  /* Early BinkSDK BINKSUMMARY contains 31 U32 fields, 124 bytes. */
+  h4_need(b,124,1);memset(GPTR(b),0,124);
+  void_log("BinkGetSummary: no open video (NULL handle), empty statistics; no frames decoded");
  NEXT API("CoInitializeEx",2) a=h4_arg(2)&2u;if(h4_arg(1)||(h4_arg(2)&~14u))value=0x80070057;else if(com_refs&&a!=com_mode)value=0x80010106;else{value=com_refs?1:0;com_refs++;com_mode=a;}
  NEXT API("CoUninitialize",0) if(com_refs)--com_refs;
  NEXT API("CoCreateInstance",5) h4_need(h4_arg(1),16,0);h4_need(h4_arg(4),16,0);h4_need(h4_arg(5),4,1);MEM32(h4_arg(5))=0;void_log("COM class not registered in this host: %08x-%08x-%08x-%08x",MEM32(h4_arg(1)),MEM32(h4_arg(1)+4),MEM32(h4_arg(1)+8),MEM32(h4_arg(1)+12));value=0x80040154;
@@ -317,7 +324,11 @@ static void selftest(void) {
  assert(!void_vm_alloc(0xfffff000,0x10000,0x3000,4));assert(!void_vm_free(0xfffff000,0x10000,0x4000));assert(!void_vm_protect(0xfffff000,0x10000,4,&old));
  uint32_t text=void_galloc(16),out=void_galloc(32);MEM8(text)=0xdf;MEM8(text+1)=0;assert(h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,16u)==2&&MEM16(out)==0x42f&&!MEM16(out+2));assert(h4_test_api("KERNEL32.dll!WideCharToMultiByte",8,1251u,0u,out,0xffffffffu,text,16u,0u,0u)==2&&MEM8(text)==0xdf);assert(!h4_test_api("KERNEL32.dll!MultiByteToWideChar",6,1251u,0u,text,0xffffffffu,out,1u)&&last_error==122);MEM16(text)='A';MEM16(text+2)=' ';MEM16(text+4)=0;assert(h4_test_api("KERNEL32.dll!GetStringTypeW",4,1u,text,0xffffffffu,out));assert(MEM16(out)==0x381&&MEM16(out+2)==0x248&&MEM16(out+4)==0x20);assert(h4_test_api("KERNEL32.dll!LCMapStringW",6,0x409u,0x100u,text,0xffffffffu,out,16u)==3&&MEM16(out)=='a');void_gfree(text);void_gfree(out);
  assert(!h4_test_api("ole32.dll!CoInitializeEx",2,0u,2u));assert(h4_test_api("ole32.dll!CoInitializeEx",2,0u,2u)==1);assert(h4_test_api("ole32.dll!CoInitializeEx",2,0u,0u)==0x80010106);h4_test_api("ole32.dll!CoUninitialize",0);h4_test_api("ole32.dll!CoUninitialize",0);
- uint32_t audio_out=void_galloc(4);MEM32(audio_out)=0xffffffffu;assert(h4_test_api("DSOUND.dll!ordinal_1",3,0u,audio_out,0u)==0x88780078u&&!MEM32(audio_out));void_gfree(audio_out);assert(!h4_test_api("binkw32.dll!_BinkSetSoundSystem@8",2,0u,0u));assert(!h4_test_api("binkw32.dll!_BinkOpen@8",2,0u,0u));
+ uint32_t audio_out=void_galloc(4);MEM32(audio_out)=0xffffffffu;assert(h4_test_api("DSOUND.dll!ordinal_1",3,0u,audio_out,0u)==0x88780078u&&!MEM32(audio_out));void_gfree(audio_out);assert(!h4_test_api("binkw32.dll!_BinkSetSoundSystem@8",2,0u,0u));assert(!h4_test_api("binkw32.dll!_BinkOpen@8",2,0u,0u));uint32_t bink_sum=void_galloc(128);memset(GPTR(bink_sum),0xa5,128);
+ assert(!h4_test_api("binkw32.dll!_BinkGetSummary@8",2,0u,bink_sum));
+ for(unsigned i=0;i<124;i++)assert(MEM8(bink_sum+i)==0);
+ for(unsigned i=124;i<128;i++)assert(MEM8(bink_sum+i)==0xa5);
+ void_gfree(bink_sum);puts("PASS Bink disabled-video summary without fake decoder");
  uint32_t em=void_galloc(256);memset(GPTR(em),0,256);uint32_t fi=em,tb=em+24,hs=em+44,info=em+64,arr=em+80,ct=em+96,td=em+112,other=em+144;MEM32(fi+12)=1;MEM32(fi+16)=tb;MEM32(tb)=2;MEM32(tb+4)=4;MEM32(tb+12)=1;MEM32(tb+16)=hs;MEM32(hs+4)=td;MEM32(hs+12)=0x1234;MEM32(info+12)=arr;MEM32(arr)=1;MEM32(arr+4)=ct;MEM32(ct+4)=other;memcpy(GPTR(td+8),"._N",4);memcpy(GPTR(other+8),"._N",4);int32_t found_low=-9,found_high=-9;uint32_t found_handler=0;assert(eh_select_detail(fi,4,info,&found_low,&found_high,&found_handler)==0x1234&&found_low==2&&found_high==4&&found_handler==hs);assert(!eh_select(fi,5,info));MEM8(other+9)='X';assert(!eh_select(fi,4,info));MEM32(hs+4)=0;assert(eh_select(fi,4,info)==0x1234);void_gfree(em);puts("PASS EH typed matching, non-match and catch-all selection");
  uint32_t uf=void_galloc(80);memset(GPTR(uf),0,80);cleanup_rec=uf+16;cleanup_result=uf+32;MEM32(uf+4)=3;MEM32(uf+8)=uf+40;MEM32(uf+40)=0xffffffffu;MEM32(uf+44)=0xdfff0004u;MEM32(uf+48)=0;MEM32(uf+52)=0xdfff0008u;MEM32(uf+56)=1;MEM32(cleanup_rec+8)=2;uint32_t saved_sp=g_esp,saved_bp=g_ebp,saved_bx=g_ebx;g_esp=0x08001000;eh_unwind(cleanup_rec,uf,0);assert(cleanup_count==1&&MEM32(cleanup_result)==2&&MEM32(cleanup_rec+8)==0);eh_unwind(cleanup_rec,uf,-1);assert(cleanup_count==2&&MEM32(cleanup_result)==21&&MEM32(cleanup_rec+8)==0xffffffffu&&g_esp==0x08001000&&g_ebp==saved_bp&&g_ebx==saved_bx);g_esp=saved_sp;eh_unwind(cleanup_rec,uf,-1);assert(cleanup_count==2);void_gfree(uf);puts("PASS EH unwind cleanup order, effects, stack and no extra calls");
  uint32_t env_name=void_gstrdup("H4_STATE_DIR"),env_value=void_gstrdup("C:\\Different"),env_out=void_galloc(64);const char *host_state=getenv("H4_STATE_DIR");assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,env_value));assert(getenv("H4_STATE_DIR")==host_state);assert(h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u)==12&&!strcmp(GPTR(env_out),"C:\\Different"));uint32_t block=h4_test_api("KERNEL32.dll!GetEnvironmentStringsW",0);assert(block&&MEM16(block)=='H');assert(h4_test_api("KERNEL32.dll!FreeEnvironmentStringsW",1,block));assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,0u));assert(!h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u));void_gfree(env_name);void_gfree(env_value);void_gfree(env_out);
@@ -337,6 +348,8 @@ int main(int argc,char **argv) {
   return fn?0:77;
  }
  if(!strcmp(argv[1],"--selftest")){selftesting=1;selftest();return 0;}
+ if(!strcmp(argv[1],"--bink-summary-live-handle-test")){uint32_t sum=void_galloc(128);h4_test_api("binkw32.dll!_BinkGetSummary@8",2,0x12345678u,sum);return 3;}
+ if(!strcmp(argv[1],"--bink-summary-null-output-test")){h4_test_api("binkw32.dll!_BinkGetSummary@8",2,0u,0u);return 3;}
  if(!strcmp(argv[1],"--registry-read-test")){h4_test_registry(1);return 0;}
  if(!strcmp(argv[1],"--seh-trace-test")){uint32_t old=MEM32(g_fs_base),rec=void_galloc(12);MEM32(rec)=rec;MEM32(rec+4)=0;MEM32(rec+8)=4;MEM32(g_fs_base)=rec;trace_seh();MEM32(g_fs_base)=old;void_gfree(rec);return 0;}
  if(!strcmp(argv[1],"--eh-state-at-max")||!strcmp(argv[1],"--eh-target-at-max")){uint32_t p=void_galloc(48);MEM32(p+4)=1;MEM32(p+8)=p+32;MEM32(p+32)=0xffffffffu;MEM32(p+36)=0;MEM32(p+24)=!strcmp(argv[1],"--eh-state-at-max")?1:0;eh_unwind(p+16,p,!strcmp(argv[1],"--eh-state-at-max")?-1:1);return 3;}
