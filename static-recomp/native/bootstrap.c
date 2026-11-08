@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <locale.h>
 #include <wctype.h>
+#include <errno.h>
 
 static uint32_t last_error, tls_value[1088], exception_filter;
 static unsigned char tls_used[1088];
@@ -324,7 +325,18 @@ static void selftest(void) {
  puts("PASS guest heap, VM, TLS, event, mutex, critical section, CP1251/1252, CTYPE1 and stdcall tests");
 }
 int main(int argc,char **argv) {
- if(argc!=2&&argc!=3){fputs("usage: bootstrap --selftest | image.bin\n",stderr);return 2;}init();if(!strcmp(argv[1],"--selftest")){selftesting=1;selftest();return 0;}
+ if(argc!=2&&argc!=3){fputs("usage: bootstrap --selftest | --dispatch-probe <guest-va> | image.bin\n",stderr);return 2;}
+ init();
+ /* Check the table linked into THIS executable, without calling guest code. */
+ if(!strcmp(argv[1],"--dispatch-probe")){
+  if(argc!=3){fputs("usage: bootstrap --dispatch-probe <guest-va>\n",stderr);return 2;}
+  errno=0;char *end=NULL;unsigned long value=strtoul(argv[2],&end,0);
+  if(errno||!argv[2][0]||!end||*end||value>UINT32_MAX){fputs("invalid dispatch probe address\n",stderr);return 2;}
+  uint32_t va=(uint32_t)value;recomp_func_t fn=h4_find_lifted(va);
+  void_log("dispatch probe %08x: %s function=%p",va,fn?"FOUND":"MISSING",(void *)(uintptr_t)fn);
+  return fn?0:77;
+ }
+ if(!strcmp(argv[1],"--selftest")){selftesting=1;selftest();return 0;}
  if(!strcmp(argv[1],"--registry-read-test")){h4_test_registry(1);return 0;}
  if(!strcmp(argv[1],"--seh-trace-test")){uint32_t old=MEM32(g_fs_base),rec=void_galloc(12);MEM32(rec)=rec;MEM32(rec+4)=0;MEM32(rec+8)=4;MEM32(g_fs_base)=rec;trace_seh();MEM32(g_fs_base)=old;void_gfree(rec);return 0;}
  if(!strcmp(argv[1],"--eh-state-at-max")||!strcmp(argv[1],"--eh-target-at-max")){uint32_t p=void_galloc(48);MEM32(p+4)=1;MEM32(p+8)=p+32;MEM32(p+32)=0xffffffffu;MEM32(p+36)=0;MEM32(p+24)=!strcmp(argv[1],"--eh-state-at-max")?1:0;eh_unwind(p+16,p,!strcmp(argv[1],"--eh-state-at-max")?-1:1);return 3;}
