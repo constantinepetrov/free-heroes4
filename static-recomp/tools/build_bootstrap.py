@@ -37,3 +37,4 @@ def compile_one(item):
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(compile_one,sources.items()))
 linked=cache/'startup-linked';subprocess.run([cxx,*[str(x[0]) for x in results],'-pthread','-lm',*sdl_libs,'-o',str(linked)],check=True,env=env);os.replace(linked,out)
 print(f'ARM64 build: {sum(x[1] for x in results)} compiled, {sum(not x[1] for x in results)} cached',flush=True)
+print(f'startup executable={out} sha256={hashlib.sha256(out.read_bytes()).hexdigest()}',flush=True)
