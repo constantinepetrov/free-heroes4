@@ -16,12 +16,11 @@ static uint32_t active_iat;
 static uint64_t api_calls,original_entries;
 static unsigned original_unique,winmain_reached;
 static int selftesting;
+int h4_eh_test_mode(void){return selftesting;}
 static unsigned callback_tests,cleanup_count;
-static uint32_t eh_test_effect,eh_test_record;
-static void eh_throw(uint32_t obj,uint32_t info);
+static uint32_t eh_test_effect,eh_test_record,eh_test_binding,eh_test_object,cleanup_rec,cleanup_result;
 static void test_catch_first(void){MEM32(eh_test_effect)=1;g_esi=0xdeadbeef;h4_test_api("KERNEL32.dll!RaiseException",4,0xe06d7363u,1u,3u,eh_test_record);void_fatal("synthetic rethrow returned");}
-static void test_catch_second(void){assert(MEM32(eh_test_effect)==1);MEM32(eh_test_effect)=12;g_eax=0x12345678;g_esp+=4;}
-static uint32_t cleanup_rec,cleanup_result;
+static void test_catch_second(void){assert(MEM32(eh_test_effect)==1);if(eh_test_binding==1)assert(MEM8(cleanup_rec-8)==0x7b);else if(eh_test_binding==2)assert(MEM32(cleanup_rec-8)==eh_test_object);MEM32(eh_test_effect)=12;g_eax=0x12345678;g_esp+=4;}
 static void test_cleanup_a(void){assert(MEM32(cleanup_rec+8)==0xffffffffu&&g_ebp==cleanup_rec+12);MEM32(cleanup_result)=MEM32(cleanup_result)*10+1;cleanup_count++;g_esp+=4;}
 static void test_cleanup_b(void){assert(MEM32(cleanup_rec+8)==0&&g_ebp==cleanup_rec+12);MEM32(cleanup_result)=MEM32(cleanup_result)*10+2;cleanup_count++;g_esp+=4;}
 static void test_wndproc(void) {h4_need(g_esp,20,0);assert(MEM32(g_esp+4)==0x50000001u);g_eax=MEM32(g_esp+8)==0x81;g_esp+=20;++callback_tests;}
@@ -139,55 +138,6 @@ static void trace_seh(void) {
   rec=MEM32(rec);
  }
  if(n==64)void_log("SEH chain exceeds diagnostic limit");
-}
-/* Metadata selection only: never unwind or claim that a catch has run. */
-static uint32_t eh_select_detail(uint32_t fi,int state,uint32_t info,int32_t *low,int32_t *high,uint32_t *handler){
- h4_need(fi,20,0);h4_need(info,16,0);uint32_t nt=MEM32(fi+12),tb=MEM32(fi+16),arr=MEM32(info+12);h4_need(arr,4,0);uint32_t nc=MEM32(arr);
- if(nt>256||nc>256||arr>0xffffffffu-4u-nc*4u)void_fatal("EH metadata range exceeds limit");if(nt)h4_need(tb,nt*20,0);if(nc)h4_need(arr+4,nc*4,0);
- for(uint32_t t=0;t<nt;t++){uint32_t p=tb+t*20;int lo=(int32_t)MEM32(p),hi=(int32_t)MEM32(p+4);if(state<lo||state>hi)continue;uint32_t n=MEM32(p+12),hs=MEM32(p+16);if(n>256)void_fatal("EH catch count exceeds limit");if(n)h4_need(hs,n*16,0);
-  for(uint32_t c=0;c<n;c++){uint32_t h=hs+c*16,type=MEM32(h+4);if(!type){if(low)*low=lo;if(high)*high=hi;if(handler)*handler=h;return MEM32(h+12);}h4_need(type,9,0);const char *name=h4_string(type+8);
-   for(uint32_t j=0;j<nc;j++){uint32_t ct=MEM32(arr+4+j*4);h4_need(ct,8,0);uint32_t td=MEM32(ct+4);h4_need(td,9,0);if(!strcmp(name,h4_string(td+8))){if(low)*low=lo;if(high)*high=hi;if(handler)*handler=h;return MEM32(h+12);}}
-  }
- }return 0;
-}
-static uint32_t eh_select(uint32_t fi,int state,uint32_t info){return eh_select_detail(fi,state,info,NULL,NULL,NULL);}
-/* MSVC6 UnwindMap: validate the entire state path before invoking destructors. */
-static void eh_unwind(uint32_t rec,uint32_t fi,int32_t to) {
- h4_need(rec,12,1);h4_need(fi,12,0);uint32_t max=MEM32(fi+4),map=MEM32(fi+8);int32_t state=(int32_t)MEM32(rec+8),check=state;
- /* max is the number of map entries: valid indices end at max-1. */
- if(max>65536||to< -1||to>=(int32_t)max||state< -1||state>=(int32_t)max)void_fatal("invalid EH unwind state");
- if(max)h4_need(map,max*8,0);
- while(check!=to){if(check<0)void_fatal("EH unwind target not reachable");int32_t next=(int32_t)MEM32(map+8*(uint32_t)check);if(next< -1||next>=check)void_fatal("invalid EH unwind transition");check=next;}
- while(state!=to){uint32_t item=map+8*(uint32_t)state;int32_t next=(int32_t)MEM32(item);uint32_t action=MEM32(item+4);MEM32(rec+8)=(uint32_t)next;
-  if(action){uint32_t saved_sp=g_esp,saved_bp=g_ebp,saved_bx=g_ebx,saved_si=g_esi,saved_di=g_edi,saved_cur=g_cur_func;recomp_func_t fn=void_resolve(action);g_ebp=rec+12;g_esp-=4;h4_need(g_esp,4,1);MEM32(g_esp)=0;fn();if(g_esp!=saved_sp)void_fatal("EH cleanup unbalanced guest stack");g_ebp=saved_bp;g_ebx=saved_bx;g_esi=saved_si;g_edi=saved_di;g_cur_func=saved_cur;}
-  state=next;
- }
-}
-/* shortcut: cross-frame unwinds and catch-object binding fail closed until independently verified. */
-static struct {recomp_ehframe_t *frame;unsigned depth;} eh_frames[128];
-static struct {uint32_t obj,info,bx,si,di;} eh_contexts[32];
-static unsigned eh_frame_count,eh_context_count;
-void recomp_eh_push(recomp_ehframe_t *f){if(eh_frame_count==128)void_fatal("EH landing frame limit");f->prev=eh_frame_count?eh_frames[eh_frame_count-1].frame:NULL;eh_frames[eh_frame_count++]=(typeof(eh_frames[0])){f,eh_context_count};}
-void recomp_eh_pop(recomp_ehframe_t *f){if(!eh_frame_count||eh_frames[eh_frame_count-1].frame!=f)void_fatal("invalid EH landing frame pop");--eh_frame_count;}
-static void eh_throw(uint32_t obj,uint32_t info){
- if(!info){if(!eh_context_count)void_fatal("EH rethrow outside catch");obj=eh_contexts[eh_context_count-1].obj;info=eh_contexts[eh_context_count-1].info;}
- h4_need(info,16,0);uint32_t rec=MEM32(g_fs_base);h4_need(rec,12,1);uint32_t stub=MEM32(rec+4);h4_need(stub,11,0);
- if(MEM8(stub)!=0xb8||(MEM8(stub+5)!=0xe9&&!(MEM8(stub+5)==0xff&&MEM8(stub+6)==0x25)))void_fatal("unsupported SEH handler stub");
- uint32_t fi=MEM32(stub+1);h4_need(fi,20,0);if(MEM32(fi)!=0x19930520u)void_fatal("unsupported EH FuncInfo magic");
- int32_t low=0,high=0;uint32_t handler=0;uint32_t target=eh_select_detail(fi,(int32_t)MEM32(rec+8),info,&low,&high,&handler);
- if(!target)void_fatal("EH catch not found in top frame");h4_need(handler,16,0);
- if(MEM32(handler)||MEM32(handler+8))void_fatal("EH catch binding unsupported");
- uint32_t guest_bp=rec+12;int frame_index=-1;for(int i=(int)eh_frame_count-1;i>=0;i--)if(eh_frames[i].frame->entry_esp==guest_bp+4){frame_index=i;break;}
- if(frame_index<0)void_fatal("EH owner has no landing pad");if(eh_context_count==32)void_fatal("EH context limit");
- eh_unwind(rec,fi,low);MEM32(g_fs_base)=rec;MEM32(rec+8)=(uint32_t)(high+1);
- eh_contexts[eh_context_count++]=(typeof(eh_contexts[0])){obj,info,g_ebx,g_esi,g_edi};
- uint32_t old_sp=g_esp,old_bp=g_ebp;recomp_func_t fn=void_resolve(target);g_ebp=guest_bp;g_esp-=4;h4_need(g_esp,4,1);MEM32(g_esp)=0;
- void_log("EH invoking catch %08x",target);fn();if(g_esp!=old_sp)void_fatal("EH catch unbalanced guest stack");uint32_t continuation=g_eax;
- unsigned restore_depth=eh_frames[frame_index].depth;if(restore_depth>=eh_context_count)void_fatal("invalid EH context depth");
- g_ebx=eh_contexts[restore_depth].bx;g_esi=eh_contexts[restore_depth].si;g_edi=eh_contexts[restore_depth].di;eh_context_count=restore_depth;
- (void)old_bp;eh_frame_count=(unsigned)frame_index+1;recomp_ehframe_t *frame=eh_frames[frame_index].frame;
- h4_need(guest_bp-16,4,0);g_esp=MEM32(guest_bp-16);g_ebp=guest_bp;g_eax=continuation;frame->resume=continuation;
- void_log("EH continuing at %08x",continuation);_longjmp(frame->jb,1);
 }
 static void invoke(void) {
  const char *full=active_import,*s=strchr(full,'!');s=s?s+1:full;
@@ -372,20 +322,33 @@ int main(int argc,char **argv) {
  if(!strcmp(argv[1],"--seh-trace-test")){uint32_t old=MEM32(g_fs_base),rec=void_galloc(12);MEM32(rec)=rec;MEM32(rec+4)=0;MEM32(rec+8)=4;MEM32(g_fs_base)=rec;trace_seh();MEM32(g_fs_base)=old;void_gfree(rec);return 0;}
  if(!strcmp(argv[1],"--eh-state-at-max")||!strcmp(argv[1],"--eh-target-at-max")){uint32_t p=void_galloc(48);MEM32(p+4)=1;MEM32(p+8)=p+32;MEM32(p+32)=0xffffffffu;MEM32(p+36)=0;MEM32(p+24)=!strcmp(argv[1],"--eh-state-at-max")?1:0;eh_unwind(p+16,p,!strcmp(argv[1],"--eh-state-at-max")?-1:1);return 3;}
  if(!strcmp(argv[1],"--eh-invalid-unwind")){uint32_t p=void_galloc(48);MEM32(p+4)=1;MEM32(p+8)=p+32;MEM32(p+16+8)=0;MEM32(p+32)=0;MEM32(p+36)=0xdfff0004u;eh_unwind(p+16,p,-1);return 3;}
- if(!strcmp(argv[1],"--eh-dispatch-test")){
-  selftesting=1;uint32_t p=void_galloc(256);memset(GPTR(p),0,256);uint32_t map=p+24,tries=p+48,h1=p+88,h2=p+104,info=p+120,arr=p+136,ct=p+152,td=p+168,stub=p+200;cleanup_result=p+224;eh_test_effect=p+228;eh_test_record=p+232;MEM32(eh_test_record)=0x19930520u;cleanup_rec=0x08002000;cleanup_count=0;
+ if(!strcmp(argv[1],"--eh-dispatch-test")||!strcmp(argv[1],"--eh-binding-test")||!strcmp(argv[1],"--eh-binding-reference-test")||!strcmp(argv[1],"--eh-binding-unsupported-test")){
+  selftesting=1;uint32_t p=void_galloc(512);memset(GPTR(p),0,512);uint32_t map=p+24,tries=p+48,h1=p+88,h2=p+104,info=p+120,arr=p+136,ct=p+152,td=p+300,stub=p+200;cleanup_result=p+224;eh_test_effect=p+228;eh_test_record=p+232;MEM32(eh_test_record)=0x19930520u;cleanup_rec=0x08002000;cleanup_count=0;
   MEM32(p)=0x19930520;MEM32(p+4)=3;MEM32(p+8)=map;MEM32(p+12)=2;MEM32(p+16)=tries;
   MEM32(map)=0xffffffffu;MEM32(map+8)=0;MEM32(map+12)=0xdfff0008u;MEM32(map+16)=1;
   MEM32(tries)=1;MEM32(tries+4)=1;MEM32(tries+12)=1;MEM32(tries+16)=h1;MEM32(tries+20)=0;MEM32(tries+24)=2;MEM32(tries+32)=1;MEM32(tries+36)=h2;
-  MEM32(h1+4)=td;MEM32(h1+12)=0xdfff0010u;MEM32(h2+4)=td;MEM32(h2+12)=0xdfff0014u;MEM32(info+12)=arr;MEM32(arr)=1;MEM32(arr+4)=ct;MEM32(ct+4)=td;memcpy(GPTR(td+8),"._N",4);
+  MEM32(h1+4)=td;MEM32(h1+12)=0xdfff0010u;MEM32(h2+4)=td;MEM32(h2+12)=0xdfff0014u;MEM32(info+12)=arr;MEM32(arr)=1;MEM32(arr+4)=ct;MEM32(ct+4)=td;MEM32(ct+12)=0xffffffffu;MEM32(ct+20)=1;memcpy(GPTR(td+8),"._N",4);eh_test_binding=!strcmp(argv[1],"--eh-binding-test")?1:!strcmp(argv[1],"--eh-binding-reference-test")?2:!strcmp(argv[1],"--eh-binding-unsupported-test")?3:0;if(eh_test_binding){MEM32(h2+8)=(uint32_t)-20;MEM8(p+280)=0x7b;eh_test_object=p+280;if(eh_test_binding==2)MEM32(h2)=8;else if(eh_test_binding==3)MEM32(ct+24)=0x1234;}
   MEM8(stub)=0xb8;MEM32(stub+1)=p;MEM8(stub+5)=0xe9;MEM32(cleanup_rec)=0xffffffffu;MEM32(cleanup_rec+4)=stub;MEM32(cleanup_rec+8)=1;MEM32(cleanup_rec-4)=0x08003000;MEM32(g_fs_base)=cleanup_rec;
   g_esp=0x08003000;g_esi=0x12344321;g_ebx=0x11223344;g_edi=0x33445566;recomp_ehframe_t outer={0},frame={0};outer.entry_esp=0x08004000;recomp_eh_push(&outer);frame.entry_esp=cleanup_rec+16;recomp_eh_push(&frame);
-  if(!_setjmp(frame.jb)){MEM32(eh_test_record+4)=0x1234;MEM32(eh_test_record+8)=info;uint32_t nested=p+244;MEM32(nested)=0x19930520u;eh_test_record=nested;h4_test_api("KERNEL32.dll!RaiseException",4,0xe06d7363u,1u,3u,p+232);void_fatal("synthetic throw returned");}
+  if(!_setjmp(frame.jb)){MEM32(eh_test_record+4)=eh_test_binding?p+280:0x1234;MEM32(eh_test_record+8)=info;uint32_t nested=p+244;MEM32(nested)=0x19930520u;eh_test_record=nested;h4_test_api("KERNEL32.dll!RaiseException",4,0xe06d7363u,1u,3u,p+232);void_fatal("synthetic throw returned");}
   assert(frame.resume==0x12345678&&MEM32(eh_test_effect)==12&&cleanup_count==1&&MEM32(cleanup_result)==2);
   assert(g_esi==0x12344321&&g_ebx==0x11223344&&g_edi==0x33445566&&g_ebp==cleanup_rec+12&&g_esp==0x08003000&&MEM32(g_fs_base)==cleanup_rec&&eh_context_count==0);
-  assert(eh_frame_count==2&&eh_frames[0].frame==&outer);recomp_eh_pop(&frame);recomp_eh_pop(&outer);MEM32(g_fs_base)=0xffffffffu;void_gfree(p);puts("PASS EH dispatcher nested rethrow, cleanup, landing state and registers");return 0;
+  assert(eh_frame_count==2&&frame.prev==&outer);recomp_eh_pop(&frame);recomp_eh_pop(&outer);MEM32(g_fs_base)=0xffffffffu;void_gfree(p);puts("PASS EH dispatcher nested rethrow, cleanup, landing state and registers");return 0;
  }
- if(!strcmp(argv[1],"--eh-cross-frame-test")){uint32_t p=void_galloc(256);memset(GPTR(p),0,256);uint32_t rec=0x08002000,outer=0x08002100,stub=p+64,info=p+80,arr=p+96,outerfi=p+112,tries=p+136,handler=p+156,outerstub=p+180;MEM8(stub)=0xb8;MEM32(stub+1)=p;MEM8(stub+5)=0xe9;MEM32(p)=0x19930520;MEM32(info+12)=arr;MEM32(rec)=outer;MEM32(rec+4)=stub;MEM32(rec+8)=0;MEM32(outer)=0xffffffffu;MEM32(outer+4)=outerstub;MEM32(outer+8)=0;MEM8(outerstub)=0xb8;MEM32(outerstub+1)=outerfi;MEM8(outerstub+5)=0xe9;MEM32(outerfi)=0x19930520;MEM32(outerfi+12)=1;MEM32(outerfi+16)=tries;MEM32(tries+12)=1;MEM32(tries+16)=handler;MEM32(handler+12)=0xdfff0014u;assert(eh_select(outerfi,0,info)==0xdfff0014u);MEM32(g_fs_base)=rec;eh_throw(0x1234,info);return 3;}
+ if(!strcmp(argv[1],"--eh-cross-frame-test")||!strcmp(argv[1],"--eh-dead-frame-test")){
+  selftesting=1;uint32_t p=void_galloc(256);memset(GPTR(p),0,256);uint32_t rec=0x08002000,outer=0x08002100,stub=p+64,info=p+80,arr=p+96,outerfi=p+112,tries=p+136,handler=p+156,outerstub=p+180,map=p+200,outermap=p+232;
+  MEM8(stub)=0xb8;MEM32(stub+1)=p;MEM8(stub+5)=0xe9;MEM32(p)=0x19930520;MEM32(p+4)=2;MEM32(p+8)=map;MEM32(map)=0xffffffffu;MEM32(map+4)=0xdfff0004u;MEM32(map+8)=0;MEM32(map+12)=0xdfff0008u;
+  MEM32(info+12)=arr;MEM32(rec)=outer;MEM32(rec+4)=stub;MEM32(rec+8)=1;MEM32(outer)=0xffffffffu;MEM32(outer+4)=outerstub;MEM32(outer+8)=0;MEM32(outer-4)=0x08003000;
+  MEM8(outerstub)=0xb8;MEM32(outerstub+1)=outerfi;MEM8(outerstub+5)=0xe9;MEM32(outerfi)=0x19930520;MEM32(outerfi+4)=1;MEM32(outerfi+8)=outermap;MEM32(outermap)=0xffffffffu;MEM32(outerfi+12)=1;MEM32(outerfi+16)=tries;MEM32(tries+12)=1;MEM32(tries+16)=handler;MEM32(handler+12)=0xdfff0014u;
+  cleanup_rec=rec;cleanup_result=p+224;cleanup_count=0;eh_test_effect=p+240;MEM32(eh_test_effect)=1;MEM32(g_fs_base)=rec;g_esp=0x08003000;g_ebx=0x11223344;g_esi=0x22334455;g_edi=0x33445566;
+  recomp_ehframe_t out={0};out.entry_esp=outer+16;recomp_eh_push(&out);if(!_setjmp(out.jb)){recomp_ehframe_t inner={0};inner.entry_esp=rec+16;recomp_eh_push(&inner);if(!strcmp(argv[1],"--eh-dead-frame-test"))recomp_eh_pop(&inner);g_ebx=0xabc;g_esi=0xdef;g_edi=0x789;eh_throw(0x1234,info);}
+  assert(out.resume==0x12345678&&MEM32(eh_test_effect)==12&&cleanup_count==2&&MEM32(cleanup_result)==21);assert(g_ebx==0x11223344&&g_esi==0x22334455&&g_edi==0x33445566&&g_ebp==outer+12&&g_esp==0x08003000&&MEM32(g_fs_base)==outer&&eh_frame_count==1);recomp_eh_pop(&out);MEM32(g_fs_base)=0xffffffffu;void_gfree(p);puts("PASS EH cross-frame search, cleanup order, frame lifetime and registers");return 0;
+ }
+ if(!strcmp(argv[1],"--eh-chain-cycle-test")||!strcmp(argv[1],"--eh-no-handler-test")||!strcmp(argv[1],"--eh-malformed-test")||!strcmp(argv[1],"--eh-metadata-limit-test")){
+  uint32_t p=void_galloc(128);memset(GPTR(p),0,128);uint32_t rec=0x08002000,stub=p+64,info=p+80,arr=p+96;
+  MEM8(stub)=!strcmp(argv[1],"--eh-malformed-test")?0:0xb8;MEM32(stub+1)=p;MEM8(stub+5)=0xe9;MEM32(p)=0x19930520;if(!strcmp(argv[1],"--eh-metadata-limit-test"))MEM32(p+12)=257;MEM32(info+12)=arr;
+  MEM32(rec)=!strcmp(argv[1],"--eh-chain-cycle-test")?rec:0xffffffffu;MEM32(rec+4)=stub;MEM32(rec+8)=0;MEM32(g_fs_base)=rec;eh_throw(0x1234,info);return 3;
+ }
  if(!strcmp(argv[1],"--eh-rethrow-outside")){eh_throw(0,0);return 3;}
  if(!strcmp(argv[1],"--unknown-api")){active_import="KERNEL32.dll!UnsupportedSyntheticAPI";invoke();return 3;}
  if(!strcmp(argv[1],"--blocking-wait")){object_wait(object_create(1,0,0,0),0xffffffff);return 3;}

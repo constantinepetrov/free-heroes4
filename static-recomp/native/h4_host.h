@@ -3,6 +3,16 @@
 #define H4_HOST_H
 #include "recomp_types.h"
 #include <pthread.h>
+uint32_t h4_eh_select_detail(uint32_t,int,uint32_t,int32_t*,int32_t*,uint32_t*);
+uint32_t h4_eh_select(uint32_t,int,uint32_t);
+void h4_eh_unwind(uint32_t,uint32_t,int32_t);
+void h4_eh_throw(uint32_t,uint32_t);
+int h4_eh_test_mode(void);
+extern unsigned eh_frame_count,eh_context_count;
+#define eh_select_detail h4_eh_select_detail
+#define eh_select h4_eh_select
+#define eh_unwind h4_eh_unwind
+#define eh_throw h4_eh_throw
 #include <stdarg.h>
 #define GUEST_PAGE 0x1000u
 #define GUEST_GRANULARITY 0x10000u

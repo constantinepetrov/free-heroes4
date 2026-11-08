@@ -76,6 +76,16 @@ def main():
         ins=sorted({i.address:i for b in fn.blocks.values() for i in b.instructions}.values(),key=lambda i:i.address)
         if len(ins)>10000:raise ValueError("Selected function exceeds the POC bound")
         body=lift_function_linear(lifter,f"sub_{va:08X}",ins,set(fn.blocks),va,**({"indirect_targets":fn.jump_targets,"eh_resume":fn.eh_resume} if args.eh else {}))
+        if args.eh and fn.eh_resume is not None and not fn.eh_resume:
+            # A cleanup-only guest frame still needs a live register snapshot.
+            marker=f"RECOMP_ENTER(0x{va:08X}u);"
+            registration="recomp_ehframe_t _ehf; _ehf.entry_esp=g_esp; recomp_eh_push(&_ehf); _ehf.resume=0xffffffffu;"
+            if fn.eh_frame_bias:registration+=f" _ehf.entry_esp -= 0x{fn.eh_frame_bias:X}u;"
+            assert body.count(marker)==1
+            body=body.replace(marker,marker+"\n    "+registration)
+            body=body.replace('RECOMP_REGS_OUT(); return;', 'RECOMP_EH_LEAVE(); RECOMP_REGS_OUT(); return;')
+            assert body.endswith('    RECOMP_REGS_OUT();\n}')
+            body=body[:-len('    RECOMP_REGS_OUT();\n}')]+ '    RECOMP_EH_LEAVE(); RECOMP_REGS_OUT();\n}'
         if args.eh and fn.eh_resume and fn.eh_frame_bias:
             assert body.count("    RECOMP_EH_ENTER();")==1
             body=body.replace("    RECOMP_EH_ENTER();", "    RECOMP_EH_ENTER();\n"+f"    _ehf.entry_esp -= 0x{fn.eh_frame_bias:X}u;")
@@ -88,8 +98,15 @@ def main():
     parts.append("void (*h4_find_lifted(uint32_t va))(void) { switch (va) {")
     for va in sorted(addresses):parts.append(f"case {va:#x}u: return sub_{va:08X};")
     parts.append("default: return 0; }}")
+    parts.append("int h4_eh_resume_allowed(uint32_t owner,uint32_t va) { switch(owner) {")
+    for va in sorted(addresses):
+        resumes=functions[va].eh_resume if args.eh else None
+        if resumes:
+            tests=" || ".join(f"va == {target:#x}u" for target in sorted(resumes))
+            parts.append(f"case {va:#x}u: return {tests};")
+    parts.append("default: return 0; }}")
     out.mkdir(parents=True,exist_ok=True);(out/"lifted.c").write_text("\n".join(parts)+"\n")
-    config=['void void_lift_trap(unsigned int va, const char *reason);','void h4_record_entry(unsigned int va);','void (*h4_find_lifted(unsigned int va))(void);','#include <stdint.h>','extern unsigned char *h4_guest_base;','#define VOID_GUEST_BASE ((uintptr_t)h4_guest_base)']
+    config=['int h4_eh_resume_allowed(unsigned int owner, unsigned int va);','void void_lift_trap(unsigned int va, const char *reason);','void h4_record_entry(unsigned int va);','void (*h4_find_lifted(unsigned int va))(void);','#include <stdint.h>','extern unsigned char *h4_guest_base;','#define VOID_GUEST_BASE ((uintptr_t)h4_guest_base)']
     for name,value in manifest["iat"].items():
         if not name.isidentifier():raise ValueError("Invalid IAT macro")
         config.append(f"#define H4_{name.upper()} {int(value,0):#x}u")
