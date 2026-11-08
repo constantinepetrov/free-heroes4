@@ -16,7 +16,10 @@ static uint32_t active_iat;
 static uint64_t api_calls,original_entries;
 static unsigned original_unique,winmain_reached;
 static int selftesting;
-static unsigned callback_tests;
+static unsigned callback_tests,cleanup_count;
+static uint32_t cleanup_rec,cleanup_result;
+static void test_cleanup_a(void){assert(MEM32(cleanup_rec+8)==0xffffffffu&&g_ebp==cleanup_rec+12);MEM32(cleanup_result)=MEM32(cleanup_result)*10+1;cleanup_count++;g_esp+=4;}
+static void test_cleanup_b(void){assert(MEM32(cleanup_rec+8)==0&&g_ebp==cleanup_rec+12);MEM32(cleanup_result)=MEM32(cleanup_result)*10+2;cleanup_count++;g_esp+=4;}
 static void test_wndproc(void) {h4_need(g_esp,20,0);assert(MEM32(g_esp+4)==0x50000001u);g_eax=MEM32(g_esp+8)==0x81;g_esp+=20;++callback_tests;}
 static unsigned char visited[(H4_IMAGE_SIZE+7)/8];
 void h4_record_entry(uint32_t va) {
@@ -143,6 +146,17 @@ static uint32_t eh_select(uint32_t fi,int state,uint32_t info){
   }
  }return 0;
 }
+/* MSVC6 UnwindMap: validate the entire state path before invoking destructors. */
+static void eh_unwind(uint32_t rec,uint32_t fi,int32_t to) {
+ h4_need(rec,12,1);h4_need(fi,12,0);uint32_t max=MEM32(fi+4),map=MEM32(fi+8);int32_t state=(int32_t)MEM32(rec+8),check=state;
+ if(max>65536||to< -1||to>=(int32_t)max||state< -1||state>=(int32_t)max)void_fatal("invalid EH unwind state");
+ if(max)h4_need(map,max*8,0);
+ while(check!=to){if(check<0)void_fatal("EH unwind target not reachable");int32_t next=(int32_t)MEM32(map+8*(uint32_t)check);if(next< -1||next>=check)void_fatal("invalid EH unwind transition");check=next;}
+ while(state!=to){uint32_t item=map+8*(uint32_t)state;int32_t next=(int32_t)MEM32(item);uint32_t action=MEM32(item+4);MEM32(rec+8)=(uint32_t)next;
+  if(action){uint32_t saved_sp=g_esp,saved_bp=g_ebp,saved_bx=g_ebx,saved_si=g_esi,saved_di=g_edi,saved_cur=g_cur_func;recomp_func_t fn=void_resolve(action);g_ebp=rec+12;g_esp-=4;h4_need(g_esp,4,1);MEM32(g_esp)=0;fn();if(g_esp!=saved_sp)void_fatal("EH cleanup unbalanced guest stack");g_ebp=saved_bp;g_ebx=saved_bx;g_esi=saved_si;g_edi=saved_di;g_cur_func=saved_cur;}
+  state=next;
+ }
+}
 static void invoke(void) {
  const char *full=active_import,*s=strchr(full,'!');s=s?s+1:full;
  uint32_t a,b,c,d,value=0;unsigned count=0;
@@ -244,6 +258,8 @@ static void invoke(void) {
 }
 recomp_func_t void_resolve(uint32_t va) {
  if(selftesting&&va==0xdfff0000u)return test_wndproc;
+ if(selftesting&&va==0xdfff0004u)return test_cleanup_a;
+ if(selftesting&&va==0xdfff0008u)return test_cleanup_b;
  recomp_func_t fn=h4_ddraw_resolve(va);if(fn)return fn;fn=h4_find_lifted(va);if(fn)return fn;
  if(va>=0xe0000000u && !(va&3) && (va-0xe0000000u)/4<H4_IMPORT_COUNT){unsigned i=(va-0xe0000000u)/4;active_import=h4_import_names[i].name;active_iat=h4_import_names[i].iat;return invoke;}
  void_log("unsupported dispatch %08x from %08x",va,g_cur_func);exit(77);
@@ -311,6 +327,7 @@ static void selftest(void) {
  assert(!h4_test_api("ole32.dll!CoInitializeEx",2,0u,2u));assert(h4_test_api("ole32.dll!CoInitializeEx",2,0u,2u)==1);assert(h4_test_api("ole32.dll!CoInitializeEx",2,0u,0u)==0x80010106);h4_test_api("ole32.dll!CoUninitialize",0);h4_test_api("ole32.dll!CoUninitialize",0);
  uint32_t audio_out=void_galloc(4);MEM32(audio_out)=0xffffffffu;assert(h4_test_api("DSOUND.dll!ordinal_1",3,0u,audio_out,0u)==0x88780078u&&!MEM32(audio_out));void_gfree(audio_out);assert(!h4_test_api("binkw32.dll!_BinkSetSoundSystem@8",2,0u,0u));assert(!h4_test_api("binkw32.dll!_BinkOpen@8",2,0u,0u));
  uint32_t em=void_galloc(256);memset(GPTR(em),0,256);uint32_t fi=em,tb=em+24,hs=em+44,info=em+64,arr=em+80,ct=em+96,td=em+112,other=em+144;MEM32(fi+12)=1;MEM32(fi+16)=tb;MEM32(tb)=2;MEM32(tb+4)=4;MEM32(tb+12)=1;MEM32(tb+16)=hs;MEM32(hs+4)=td;MEM32(hs+12)=0x1234;MEM32(info+12)=arr;MEM32(arr)=1;MEM32(arr+4)=ct;MEM32(ct+4)=other;memcpy(GPTR(td+8),"._N",4);memcpy(GPTR(other+8),"._N",4);assert(eh_select(fi,4,info)==0x1234);assert(!eh_select(fi,5,info));MEM8(other+9)='X';assert(!eh_select(fi,4,info));MEM32(hs+4)=0;assert(eh_select(fi,4,info)==0x1234);void_gfree(em);puts("PASS EH typed matching, non-match and catch-all selection");
+ uint32_t uf=void_galloc(80);memset(GPTR(uf),0,80);cleanup_rec=uf+16;cleanup_result=uf+32;MEM32(uf+4)=3;MEM32(uf+8)=uf+40;MEM32(uf+40)=0xffffffffu;MEM32(uf+44)=0xdfff0004u;MEM32(uf+48)=0;MEM32(uf+52)=0xdfff0008u;MEM32(uf+56)=1;MEM32(cleanup_rec+8)=2;uint32_t saved_sp=g_esp,saved_bp=g_ebp,saved_bx=g_ebx;g_esp=0x08001000;eh_unwind(cleanup_rec,uf,0);assert(cleanup_count==1&&MEM32(cleanup_result)==2&&MEM32(cleanup_rec+8)==0);eh_unwind(cleanup_rec,uf,-1);assert(cleanup_count==2&&MEM32(cleanup_result)==21&&MEM32(cleanup_rec+8)==0xffffffffu&&g_esp==0x08001000&&g_ebp==saved_bp&&g_ebx==saved_bx);g_esp=saved_sp;eh_unwind(cleanup_rec,uf,-1);assert(cleanup_count==2);void_gfree(uf);puts("PASS EH unwind cleanup order, effects, stack and no extra calls");
  uint32_t env_name=void_gstrdup("H4_STATE_DIR"),env_value=void_gstrdup("C:\\Different"),env_out=void_galloc(64);const char *host_state=getenv("H4_STATE_DIR");assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,env_value));assert(getenv("H4_STATE_DIR")==host_state);assert(h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u)==12&&!strcmp(GPTR(env_out),"C:\\Different"));uint32_t block=h4_test_api("KERNEL32.dll!GetEnvironmentStringsW",0);assert(block&&MEM16(block)=='H');assert(h4_test_api("KERNEL32.dll!FreeEnvironmentStringsW",1,block));assert(h4_test_api("KERNEL32.dll!SetEnvironmentVariableA",2,env_name,0u));assert(!h4_test_api("KERNEL32.dll!GetEnvironmentVariableA",3,env_name,env_out,64u));void_gfree(env_name);void_gfree(env_value);void_gfree(env_out);
  h4_test_version();window_selftest();h4_test_registry(0);h4_test_files();
  puts("PASS guest heap, VM, TLS, event, mutex, critical section, CP1251/1252, CTYPE1 and stdcall tests");
@@ -319,6 +336,7 @@ int main(int argc,char **argv) {
  if(argc!=2&&argc!=3){fputs("usage: bootstrap --selftest | image.bin\n",stderr);return 2;}init();if(!strcmp(argv[1],"--selftest")){selftesting=1;selftest();return 0;}
  if(!strcmp(argv[1],"--registry-read-test")){h4_test_registry(1);return 0;}
  if(!strcmp(argv[1],"--seh-trace-test")){uint32_t old=MEM32(g_fs_base),rec=void_galloc(12);MEM32(rec)=rec;MEM32(rec+4)=0;MEM32(rec+8)=4;MEM32(g_fs_base)=rec;trace_seh();MEM32(g_fs_base)=old;void_gfree(rec);return 0;}
+ if(!strcmp(argv[1],"--eh-invalid-unwind")){uint32_t p=void_galloc(48);MEM32(p+4)=1;MEM32(p+8)=p+32;MEM32(p+16+8)=0;MEM32(p+32)=0;MEM32(p+36)=0xdfff0004u;eh_unwind(p+16,p,-1);return 3;}
  if(!strcmp(argv[1],"--unknown-api")){active_import="KERNEL32.dll!UnsupportedSyntheticAPI";invoke();return 3;}
  if(!strcmp(argv[1],"--blocking-wait")){object_wait(object_create(1,0,0,0),0xffffffff);return 3;}
  if(!void_vm_claim(H4_IMAGE_BASE,H4_IMAGE_SIZE,4))void_fatal("image allocation failed");
