@@ -9,6 +9,9 @@ exe=output/'progressive.pe';exe.write_bytes(raw);image=output/'image.bin';image.
 m=json.loads((fixture/'manifest.json').read_text());m['functions']={'startup':'0x401500'};m['sha256']=hashlib.sha256(raw).hexdigest();manifest=output/'input.json';manifest.write_text(json.dumps(m))
 catalog=output/'catalog.json';catalog.write_text(json.dumps({'image_base':0x400000,'functions':[{'address':0x401550,'calls_to':[0x401560]},{'address':0x401560,'calls_to':[]}]}))
 r=pathlib.Path(__file__).resolve().parents[2]
-subprocess.run([sys.executable,str(r/'static-recomp/tools/advance_startup.py'),'--h5',str(h5),'--exe',str(exe),'--manifest',str(manifest),'--image',str(image),'--work',str(output/'work'),'--catalog',str(catalog),'--steps','3'],check=True)
+subprocess.run([sys.executable,str(r/'static-recomp/tools/advance_startup.py'),'--h5',str(h5),'--exe',str(exe),'--manifest',str(manifest),'--image',str(image),'--work',str(output/'work'),'--catalog',str(catalog),'--steps','3','--probe-address','0x401500'],check=True)
+probe=(output/'work/dispatch-probe.txt').read_text()
+assert 'probe_address=00401500' in probe and 'dispatch probe 00401500: FOUND' in probe,probe
+assert 'sha256=' in probe and 'startup=' in probe,probe
 log=(output/'work/last-startup.txt').read_text();assert 'original startup returned eax=0000002a' in log,log;assert 'entries=3 unique=3' in log,log
 assert hashlib.sha256(exe.read_bytes()).hexdigest()==m['sha256'];print('PASS bounded progressive lifting and two actual synthetic guest helpers')
