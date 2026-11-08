@@ -3,10 +3,10 @@ import hashlib,json,pathlib,struct,subprocess,sys
 fixture,h5,out=map(pathlib.Path,sys.argv[1:]);out.mkdir(parents=True,exist_ok=True)
 raw=bytearray((fixture/'synthetic.pe').read_bytes())
 # A conventional MSVC6 registration, an independent catch and a cold continuation.
-owner=bytes.fromhex('558bec6aff680012400064a1000000005064892500000000ff150c204000c9c3');raw[0x200:0x200+len(owner)]=owner
+owner=bytes.fromhex('558bec6aff680012400064a1000000005064892500000000e8e3020000ff150c204000c9c3');raw[0x200:0x200+len(owner)]=owner
 raw[0x400:0x40a]=bytes.fromhex('b830204000e906000000')
 raw[0x410]=0xc3
-raw[0x500:0x506]=bytes.fromhex('b800144000c3')
+raw[0x500:0x50a]=bytes.fromhex('b800144000c645e800c3')
 continuation=bytes.fromhex('8b4df464890d00000000b82a0000005dc3');raw[0x600:0x600+len(continuation)]=continuation
 struct.pack_into('<5I',raw,0x830,0x19930520,1,0x402050,1,0x402058)
 struct.pack_into('<2I',raw,0x850,0xffffffff,0)

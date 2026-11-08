@@ -19,6 +19,7 @@ def main():
     sys.path.insert(0,str(args.h5/"tools"));from lift_game import CheckedLifter,lift_function_linear,complete_eh_owner
     from tools.pe.pe_analyze import analyze_pe,build_iat_map
     from tools.disasm.disasm32 import Disassembler
+    from tools.lift.eh32 import funcinfo,catch_funclets,PROLOGUE_WINDOW
     info=analyze_pe(str(args.exe))
     if info.machine!="i386" or info.pe_type!="PE32":ap.error("Only reviewed PE32 i386 inputs are supported")
     iat=build_iat_map(info);dis=Disassembler(raw,info.image_base,info.sections)
@@ -30,9 +31,40 @@ def main():
         fn=dis.disassemble_function(va,iat)
         if fn is None:raise ValueError(f"No decoded function at {va:#x}")
         if args.eh:
-            before=set(fn.calls_to)
             complete_eh_owner(dis,fn,iat)
-            for target in fn.calls_to-before:
+            funclets=set()
+            if fn.eh_resume is not None:
+                handler=None
+                ins=sorted({i.address:i for b in fn.blocks.values() for i in b.instructions}.values(),key=lambda i:i.address)
+                for instruction in ins[:PROLOGUE_WINDOW]:
+                    if instruction.mnemonic=="push" and instruction.op_str.startswith("0x"):
+                        handler=int(instruction.op_str,16)
+                    elif instruction.mnemonic=="mov" and instruction.op_str.endswith("dword ptr fs:[0]") and handler is not None:
+                        fi=funcinfo(dis.read_bytes,handler)
+                        if fi is None:raise ValueError(f"EH owner {va:#x} lacks verified FuncInfo")
+                        funclets.update(catch_funclets(dis.read_bytes,fi));break
+                else:raise ValueError(f"EH owner {va:#x} lacks a handler registration")
+            # A catch may write memory after loading its continuation into EAX.
+            # Accept only a straight-line tail of memory stores; stop on anything else.
+            for entry in sorted(funclets):
+                catch=dis.disassemble_function(entry,iat)
+                if catch is None:raise ValueError(f"Cannot decode EH catch {entry:#x}")
+                for block in catch.blocks.values():
+                    seq=block.instructions
+                    if not seq or not seq[-1].is_ret:continue
+                    for instruction in reversed(seq[:-1]):
+                        if instruction.mnemonic=="mov" and instruction.op_str.startswith("eax, 0x"):
+                            resume=int(instruction.op_str[5:],16)
+                            if not dis.is_code_address(resume):raise ValueError("EH continuation outside code")
+                            if resume not in {i.address for b in fn.blocks.values() for i in b.instructions}:
+                                cold=dis.disassemble_function(resume,iat)
+                                if cold is None or cold.num_instructions>16384:raise ValueError("Cannot decode EH continuation")
+                                fn.blocks.update(cold.blocks);fn.calls_to.update(cold.calls_to);fn.jump_targets.update(cold.jump_targets)
+                            fn.eh_resume.add(resume);break
+                        if instruction.mnemonic=="mov" and instruction.op_str.startswith(("byte ptr [","word ptr [","dword ptr [")):
+                            continue
+                        break
+            for target in funclets:
                 if target not in addresses and dis.is_code_address(target):
                     if len(addresses)>=10000:raise ValueError("EH function set exceeds the POC bound")
                     addresses.add(target);pending.add(target)

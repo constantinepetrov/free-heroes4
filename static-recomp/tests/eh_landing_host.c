@@ -9,9 +9,9 @@ void h4_record_entry(uint32_t va){(void)va;}
 void void_lift_trap(uint32_t va,const char *reason){fprintf(stderr,"trap %08x %s\n",va,reason);abort();}
 static void synthetic_throw(void){
  assert(frame&&MEM32(g_fs_base)==g_ebp-12);
- uint32_t saved_sp=g_esp;g_esp-=4;MEM32(g_esp)=0;
+ uint32_t saved_sp=g_esp;MEM8(g_ebp-24)=0x7f;g_esp-=4;MEM32(g_esp)=0;
  recomp_func_t f=h4_find_lifted(0x401300);assert(f);f();assert(g_esp==saved_sp);
- assert(g_eax==0x401400);frame->resume=g_eax;g_esp=g_ebp;
+ assert(g_eax==0x401400&&MEM8(g_ebp-24)==0);frame->resume=g_eax;g_esp=g_ebp;
  _longjmp(frame->jb,1);
 }
 recomp_func_t void_resolve(uint32_t va){assert(va==0xf0000000);return synthetic_throw;}
