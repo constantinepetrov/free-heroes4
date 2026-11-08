@@ -1,12 +1,12 @@
 """Incremental native build; private generated C and compiler temporaries stay outside Git."""
 import argparse,concurrent.futures,hashlib,os,pathlib,re,subprocess,shlex,sys
-p=argparse.ArgumentParser();p.add_argument('--h5',type=pathlib.Path,required=True);p.add_argument('--lifted',type=pathlib.Path,required=True);p.add_argument('--output',type=pathlib.Path,required=True);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--tested-eh',action='store_true',help='explicitly enable the experimentally validated EH runtime');p.add_argument('--h5',type=pathlib.Path,required=True);p.add_argument('--lifted',type=pathlib.Path,required=True);p.add_argument('--output',type=pathlib.Path,required=True);a=p.parse_args()
 r=pathlib.Path(__file__).resolve().parents[2];out=a.output.resolve();lift=a.lifted.resolve();h5=a.h5.resolve()
 if out==r or r in out.parents or out==lift/'lifted.c' or out==lift/'runtime_config.h':p.error('Build output must stay outside Git and preserve generated inputs')
 cache=out.parent/'bootstrap-build';cache.mkdir(parents=True,exist_ok=True);tmp=cache/'tmp';tmp.mkdir(exist_ok=True);env=dict(os.environ,TMPDIR=str(tmp))
 code=(lift/'lifted.c').read_text()
 # shortcut: the EH dispatcher is not connected; remove this guard after EH execution tests pass.
-if 'RECOMP_EH_ENTER();' in code:raise SystemExit('EH landing pads require an EH-capable runtime; bootstrap dispatch is not implemented')
+if 'RECOMP_EH_ENTER();' in code and not a.tested_eh:raise SystemExit('EH landing pads require an EH-capable runtime; bootstrap dispatch is not implemented')
 matches=list(re.finditer(r'^void sub_([0-9A-F]{8})\(void\) \{',code,re.M))
 if not matches:raise SystemExit('No generated function bodies')
 last=code.index('\nvoid h4_',matches[-1].end());groups={}
@@ -23,6 +23,7 @@ sources['ddraw_surface_cpp']=(r/'static-recomp/native/ddraw_surface.cpp').read_t
 sources['surface565_cpp']=(r/'src/h4/graphics/surface565.cpp').read_text()
 cxx='clang++' if sys.platform=='darwin' else 'g++-14'
 flags=['-O1','-g','-fwrapv','-fno-strict-aliasing','-ffp-contract=off','-DRECOMP_GENERATED_CODE','-DRECOMP_TRACE','-DH4_BOOTSTRAP_RUNTIME',f'-DH4_DLMALLOC_SOURCE="{h5}/reference/dlmalloc/malloc.c"','-include',str(lift/'runtime_config.h'),'-I'+str(h5/'android/runtime'),'-I'+str(r/'static-recomp/native'),'-I'+str(cache),'-I'+str(r/'src'),'-pthread']
+if a.tested_eh:flags+=['-DH4_TESTED_EH']
 flags+=shlex.split(subprocess.check_output(['pkg-config','--cflags','sdl3'],text=True))
 sdl_libs=shlex.split(subprocess.check_output(['pkg-config','--static','--libs','sdl3'],text=True))
 key=(lift/'runtime_config.h').read_bytes()+(h5/'android/runtime/recomp_types.h').read_bytes()+(r/'static-recomp/native/h4_host.h').read_bytes()+(h5/'reference/dlmalloc/malloc.c').read_bytes()+subprocess.check_output(['clang','--version'])+subprocess.check_output([cxx,'--version'])+repr(flags).encode()

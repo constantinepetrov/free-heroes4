@@ -6,7 +6,7 @@ raw=bytearray((fixture/'synthetic.pe').read_bytes())
 # A conventional MSVC6 registration, an independent catch and a cold continuation.
 prefix=bytes.fromhex('558bec6aff680012400064a100000000506489250000000083ec048965f0c745fc00000000')
 owner=prefix+b'\xe8'+struct.pack('<i',0x401180-(0x401000+len(prefix)+5))+bytes.fromhex('c9c3');raw[0x200:0x200+len(owner)]=owner
-inner=bytes.fromhex('558bec6aff684012400064a100000000506489250000000083ec048965f0c745fc00000000bbbc0a0000beef0d0000bf89070000ff150c204000c9c3');raw[0x300:0x300+len(inner)]=inner
+inner=bytes.fromhex('558bec6aff684012400064a100000000506489250000000083ec048965f0c745fc00000000bbbc0a0000beef0d0000bf8907000068d02040006a036a016863736de0ff150c204000c9c3');raw[0x300:0x300+len(inner)]=inner
 middle_prefix=bytes.fromhex('535657bb11111111be22222222bf33333333')
 middle=middle_prefix+b'\xe8'+struct.pack('<i',0x401100-(0x401180+len(middle_prefix)+5))+bytes.fromhex('5f5e5bc3');raw[0x380:0x380+len(middle)]=middle
 raw[0x440:0x44a]=bytes.fromhex('b800154000e906000000');raw[0x450]=0xc3
@@ -14,10 +14,10 @@ struct.pack_into('<5I',raw,0x700,0x19930520,1,0x401520,0,0)
 struct.pack_into('<2I',raw,0x720,0xffffffff,0x401380)
 raw[0x400:0x40a]=bytes.fromhex('b830204000e906000000')
 raw[0x410]=0xc3
-raw[0x500:0x507]=bytes.fromhex('ff1510204000c3')
+first_catch=bytes.fromhex('68e02040006a036a016863736de0ff1510204000c3');raw[0x500:0x500+len(first_catch)]=first_catch
 raw[0x550:0x55a]=bytes.fromhex('b800144000c645e800c3')
-inner_cleanup=bytes.fromhex('0fb605d02040006bc00a83c001a2d0204000c3');raw[0x580:0x580+len(inner_cleanup)]=inner_cleanup
-outer_cleanup=bytes.fromhex('0fb605d02040006bc00a83c002a2d0204000c3');raw[0x5a0:0x5a0+len(outer_cleanup)]=outer_cleanup
+inner_cleanup=bytes.fromhex('0fb605f02040006bc00a83c001a2f0204000c3');raw[0x580:0x580+len(inner_cleanup)]=inner_cleanup
+outer_cleanup=bytes.fromhex('0fb605f02040006bc00a83c002a2f0204000c3');raw[0x5a0:0x5a0+len(outer_cleanup)]=outer_cleanup
 continuation=bytes.fromhex('8b4df464890d00000000b82a0000008be55dc3');raw[0x600:0x600+len(continuation)]=continuation
 struct.pack_into('<5I',raw,0x830,0x19930520,2,0x402050,2,0x402060)
 struct.pack_into('<4I',raw,0x850,0xffffffff,0,0,0x4013a0)
@@ -27,6 +27,10 @@ struct.pack_into('<4I',raw,0x888,0,0,0,0x401300)
 struct.pack_into('<4I',raw,0x898,0,0,0,0x401350)
 struct.pack_into('<4I',raw,0x8b0,0,0,0,0x4020c0)
 struct.pack_into('<I',raw,0x8c0,0)
+struct.pack_into('<3I',raw,0x8d0,0x19930520,0x4020fc,0x4020b0)
+struct.pack_into('<3I',raw,0x8e0,0x19930520,0,0)
+struct.pack_into('<I',raw,0x80c,0x21d0);struct.pack_into('<I',raw,0x810,0x21d0)
+raw[0x9d0:0x9e1]=b'\0\0RaiseException\0'
 exe=out/'fixture.pe';exe.write_bytes(raw);image=out/'fixture-image.bin';image.write_bytes(pefile.PE(data=bytes(raw)).get_memory_mapped_image().ljust(0x3000,b"\0"))
 m=json.loads((fixture/'manifest.json').read_text());m['sha256']=hashlib.sha256(raw).hexdigest();m['functions']={'startup':'0x401000','inner':'0x401100','middle':'0x401180','cleanup':'0x401380','cleanup_outer':'0x4013a0'}
 manifest=out/'manifest.json';manifest.write_text(json.dumps(m))

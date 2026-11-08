@@ -139,6 +139,13 @@ static void trace_seh(void) {
  }
  if(n==64)void_log("SEH chain exceeds diagnostic limit");
 }
+static int eh_dispatch_enabled(void){
+#ifdef H4_TESTED_EH
+ return eh_frame_count!=0;
+#else
+ return selftesting&&eh_frame_count;
+#endif
+}
 static void invoke(void) {
  const char *full=active_import,*s=strchr(full,'!');s=s?s+1:full;
  uint32_t a,b,c,d,value=0;unsigned count=0;
@@ -156,7 +163,7 @@ static void invoke(void) {
  NEXT API("CoUninitialize",0) if(com_refs)--com_refs;
  NEXT API("CoCreateInstance",5) h4_need(h4_arg(1),16,0);h4_need(h4_arg(4),16,0);h4_need(h4_arg(5),4,1);MEM32(h4_arg(5))=0;void_log("COM class not registered in this host: %08x-%08x-%08x-%08x",MEM32(h4_arg(1)),MEM32(h4_arg(1)+4),MEM32(h4_arg(1)+8),MEM32(h4_arg(1)+12));value=0x80040154;
  NEXT API("MessageBoxA",4) void_log("original MessageBoxA flags=%08x title=%s text=%s",h4_arg(4),h4_arg(3)?h4_string(h4_arg(3)):"",h4_arg(2)?h4_string(h4_arg(2)):"");void_log("stopping before dialog response; no success is simulated");exit(77);
- NEXT API("RaiseException",4) if(selftesting&&eh_frame_count){uint32_t record=h4_arg(4);if(h4_arg(1)!=0xe06d7363u||h4_arg(2)!=1||h4_arg(3)!=3)void_fatal("unsupported EH exception record");h4_need(record,12,0);if(MEM32(record)!=0x19930520u)void_fatal("unsupported EH exception magic");g_esp+=4;eh_throw(MEM32(record+4),MEM32(record+8));void_fatal("EH dispatch unexpectedly returned");}void_log("original RaiseException code=%08x flags=%08x nargs=%u args=%08x caller=%08x",h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4),g_cur_func);if(h4_arg(3)<=15&&h4_arg(4)){h4_need(h4_arg(4),h4_arg(3)*4,0);for(unsigned i=0;i<h4_arg(3);i++)void_log("exception arg[%u]=%08x",i,MEM32(h4_arg(4)+4*i));}trace_seh();if(h4_arg(3)==3&&h4_arg(4)&&MEM32(h4_arg(4))==0x19930520u){uint32_t rec=MEM32(g_fs_base);if(void_vm_readable(rec,12)){uint32_t handler=MEM32(rec+4);if(void_vm_readable(handler,11)&&MEM8(handler)==0xb8){uint32_t fi=MEM32(handler+1);uint32_t chosen=eh_select(fi,(int32_t)MEM32(rec+8),MEM32(h4_arg(4)+8));void_log("EH selected original catch=%08x (not executed)",chosen);}}}void_log("SEH dispatch is not implemented; stopping instead of reporting success");exit(77);
+ NEXT API("RaiseException",4) if(eh_dispatch_enabled()){uint32_t record=h4_arg(4);if(h4_arg(1)!=0xe06d7363u||h4_arg(2)!=1||h4_arg(3)!=3)void_fatal("unsupported EH exception record");h4_need(record,12,0);if(MEM32(record)!=0x19930520u)void_fatal("unsupported EH exception magic");g_esp+=4;eh_throw(MEM32(record+4),MEM32(record+8));void_fatal("EH dispatch unexpectedly returned");}void_log("original RaiseException code=%08x flags=%08x nargs=%u args=%08x caller=%08x",h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4),g_cur_func);if(h4_arg(3)<=15&&h4_arg(4)){h4_need(h4_arg(4),h4_arg(3)*4,0);for(unsigned i=0;i<h4_arg(3);i++)void_log("exception arg[%u]=%08x",i,MEM32(h4_arg(4)+4*i));}trace_seh();if(h4_arg(3)==3&&h4_arg(4)&&MEM32(h4_arg(4))==0x19930520u){uint32_t rec=MEM32(g_fs_base);if(void_vm_readable(rec,12)){uint32_t handler=MEM32(rec+4);if(void_vm_readable(handler,11)&&MEM8(handler)==0xb8){uint32_t fi=MEM32(handler+1);uint32_t chosen=eh_select(fi,(int32_t)MEM32(rec+8),MEM32(h4_arg(4)+8));void_log("EH selected original catch=%08x (not executed)",chosen);}}}void_log("SEH dispatch is not implemented; stopping instead of reporting success");exit(77);
  NEXT API("DirectDrawCreateEx",4) value=h4_directdraw_create(h4_arg(1),h4_arg(2),h4_arg(3),h4_arg(4));
  NEXT API("LoadImageA",6) if(h4_arg(3)==1||h4_arg(3)==2){void_log("optional icon/cursor LoadImageA unsupported, returning NULL/ERROR_NOT_SUPPORTED");void_set_last_error(50);}else void_fatal("unsupported LoadImageA type %u",h4_arg(3));
  NEXT API("GetFileVersionInfoSizeA",2) if(h4_arg(2)){h4_need(h4_arg(2),4,1);MEM32(h4_arg(2))=0;}value=h4_version_size(h4_string(h4_arg(1)));

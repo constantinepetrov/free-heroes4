@@ -1,6 +1,7 @@
 """Private, bounded on-demand lifting of unresolved main-image functions. Never executes PE."""
 import argparse,json,pathlib,re,subprocess,sys,os
-p=argparse.ArgumentParser();p.add_argument('--eh',action='store_true',help='generate experimental EH landing pads; bootstrap is not yet EH-capable');p.add_argument('--catalog',type=pathlib.Path);p.add_argument('--h5',type=pathlib.Path,required=True);p.add_argument('--exe',type=pathlib.Path,required=True);p.add_argument('--manifest',type=pathlib.Path,required=True);p.add_argument('--image',type=pathlib.Path,required=True);p.add_argument('--work',type=pathlib.Path,required=True);p.add_argument('--steps',type=int,default=40);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--tested-eh',action='store_true',help='explicitly enable EH after passing synthetic tests');p.add_argument('--eh',action='store_true',help='generate experimental EH landing pads; bootstrap is not yet EH-capable');p.add_argument('--catalog',type=pathlib.Path);p.add_argument('--h5',type=pathlib.Path,required=True);p.add_argument('--exe',type=pathlib.Path,required=True);p.add_argument('--manifest',type=pathlib.Path,required=True);p.add_argument('--image',type=pathlib.Path,required=True);p.add_argument('--work',type=pathlib.Path,required=True);p.add_argument('--steps',type=int,default=40);a=p.parse_args()
+if a.tested_eh and not a.eh:p.error('--tested-eh requires --eh')
 r=pathlib.Path(__file__).resolve().parents[2];work=a.work.resolve()
 if work==r or r in work.parents:p.error('Private output must be outside Git')
 work.mkdir(parents=True,exist_ok=True);mp=work/'manifest.json'
@@ -17,7 +18,7 @@ if a.catalog:
  catalog={f['address']:f.get('calls_to',[]) for f in data['functions']}
 for step in range(a.steps):
  subprocess.run([sys.executable,str(r/'static-recomp/tools/lift_selected.py'),'--h5',str(a.h5),'--exe',str(a.exe),'--manifest',str(mp),'--output',str(work/'lifted'),*(['--synthetic'] if json.loads(mp.read_text()).get('synthetic') else []),*(['--eh'] if a.eh else [])],check=True)
- subprocess.run([sys.executable,str(r/'static-recomp/tools/build_bootstrap.py'),'--h5',str(a.h5),'--lifted',str(work/'lifted'),'--output',str(work/'startup')],check=True)
+ subprocess.run([sys.executable,str(r/'static-recomp/tools/build_bootstrap.py'),'--h5',str(a.h5),'--lifted',str(work/'lifted'),'--output',str(work/'startup'),*(['--tested-eh'] if a.tested_eh else [])],check=True)
  try:run=subprocess.run([str(work/'startup'),str(a.image)],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20,env=run_env)
  except subprocess.TimeoutExpired as e:
   print('Startup timeout; preserve diagnostics, do not assume progress');(work/'startup-timeout.txt').write_bytes(e.stdout or b'');break

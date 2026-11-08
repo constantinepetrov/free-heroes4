@@ -68,6 +68,12 @@ jobs:
           export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
           python static-recomp/tools/build_bootstrap.py --h5 "$RUNNER_TEMP/h5" --lifted "$RUNNER_TEMP/lifted" --output "$RUNNER_TEMP/bootstrap-arm64"
           python static-recomp/tests/bootstrap_checks.py "$RUNNER_TEMP/bootstrap-arm64" "$RUNNER_TEMP/fixture/image.bin" | tee "$RUNNER_TEMP/bootstrap-tests.txt"
+      - name: Synthetic EH-enabled bootstrap regression
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/sdl-install/lib/pkgconfig"
+          export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+          python static-recomp/tools/build_bootstrap.py --tested-eh --h5 "$RUNNER_TEMP/h5" --lifted "$RUNNER_TEMP/eh-landing/lifted" --output "$RUNNER_TEMP/eh-bootstrap"
+          python static-recomp/tests/bootstrap_checks.py "$RUNNER_TEMP/eh-bootstrap" "$RUNNER_TEMP/eh-landing/fixture-image.bin"
       - name: Bounded progressive function discovery with own PE
         run: |
           export PKG_CONFIG_PATH="$RUNNER_TEMP/sdl-install/lib/pkgconfig"
