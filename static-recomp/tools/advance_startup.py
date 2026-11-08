@@ -25,7 +25,7 @@ for step in range(a.steps):
   # The probe runs the same freshly linked executable as the subsequent scenario run.
   digest=hashlib.sha256(startup.read_bytes()).hexdigest()
   probe=subprocess.run([str(startup),'--dispatch-probe',hex(a.probe_address)],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=20,env=run_env)
-  report=f"startup={startup}\\nsha256={digest}\\nprobe_address={a.probe_address:08x}\\nexit_code={probe.returncode}\\n"+probe.stdout
+  report=f"startup={startup}\nsha256={digest}\nprobe_address={a.probe_address:08x}\nexit_code={probe.returncode}\n"+probe.stdout
   (work/'dispatch-probe.txt').write_text(report)
   print(report,flush=True)
   if probe.returncode or f"dispatch probe {a.probe_address:08x}: FOUND" not in probe.stdout:
