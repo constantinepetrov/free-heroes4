@@ -14,6 +14,7 @@ with tempfile.TemporaryDirectory(prefix='h4-host-tests-',dir=pathlib.Path(native
   if args==[image] and pathlib.Path(image).name=='fixture-image.bin':assert 'EH invoking catch 00401300' in r.stdout and 'EH invoking catch 00401350' in r.stdout and 'EH continuing at 00401400' in r.stdout,r.stdout
   if args==['--eh-binding-unsupported-test']:assert 'EH cleanup' not in r.stdout,r.stdout
   if args==['--selftest']:
+   assert 'PASS FILETIME UTC conversion, leap year, boundary and error tests' in r.stdout,r.stdout
    assert 'PASS EH unwind cleanup order' in r.stdout,r.stdout
    assert 'PASS Bink disabled-video summary without fake decoder' in r.stdout,r.stdout
   print(r.stdout,end='')
