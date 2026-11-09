@@ -51,6 +51,24 @@ static void system_time(uint32_t out,time_t seconds,unsigned milliseconds) {
  uint16_t fields[]={t.tm_year+1900,t.tm_mon+1,t.tm_wday,t.tm_mday,t.tm_hour,t.tm_min,t.tm_sec,milliseconds};
  memcpy(GPTR(out),fields,sizeof fields);
 }
+/* FILETIME: 100-ns intervals from 1601-01-01 UTC; SYSTEMTIME: eight WORDs. */
+static uint32_t filetime_to_systemtime(uint32_t input,uint32_t output) {
+ if(!input||!output){void_set_last_error(87);return 0;}
+ h4_need(input,8,0);h4_need(output,16,1);
+ uint64_t ticks=(uint64_t)MEM32(input)|((uint64_t)MEM32(input+4)<<32);
+ /* Windows rejects FILETIME >= 2^63; never modify output on invalid input. */
+ if(ticks>=0x8000000000000000ull){void_set_last_error(87);return 0;}
+ int64_t secs=(int64_t)(ticks/10000000ull)-11644473600ll;
+ time_t t=(time_t)secs;struct tm utc;
+ if((int64_t)t!=secs||!gmtime_r(&t,&utc)||utc.tm_year+1900<1601||utc.tm_year+1900>30827){
+  void_set_last_error(87);return 0;
+ }
+ uint16_t fields[]={(uint16_t)(utc.tm_year+1900),(uint16_t)(utc.tm_mon+1),
+  (uint16_t)utc.tm_wday,(uint16_t)utc.tm_mday,(uint16_t)utc.tm_hour,
+  (uint16_t)utc.tm_min,(uint16_t)utc.tm_sec,(uint16_t)((ticks%10000000ull)/10000ull)};
+ memcpy(GPTR(output),fields,sizeof fields);
+ return 1;
+}
 static uint32_t tls_alloc(void) {for(unsigned i=0;i<1088;i++)if(!tls_used[i]){tls_used[i]=1;tls_value[i]=0;return i;}void_set_last_error(8);return 0xffffffff;}
 static uint32_t tls_get(uint32_t i) {if(i>=1088||!tls_used[i]){void_set_last_error(87);return 0;}void_set_last_error(0);return tls_value[i];}
 static uint32_t tls_set(uint32_t i,uint32_t v) {if(i>=1088||!tls_used[i]){void_set_last_error(87);return 0;}tls_value[i]=v;return 1;}
@@ -181,6 +199,7 @@ static void invoke(void) {
  NEXT API("GetSystemTime",1) struct timespec t;if(clock_gettime(CLOCK_REALTIME,&t))void_fatal("realtime clock failed");system_time(h4_arg(1),t.tv_sec,(unsigned)(t.tv_nsec/1000000));
  NEXT API("GetTimeZoneInformation",1) a=h4_arg(1);h4_need(a,172,1);memset(GPTR(a),0,172);MEM16(a+4)='U';MEM16(a+6)='T';MEM16(a+8)='C';
  NEXT API("FileTimeToLocalFileTime",2) h4_need(h4_arg(1),8,0);h4_need(h4_arg(2),8,1);memmove(GPTR(h4_arg(2)),GPTR(h4_arg(1)),8);value=1;
+ NEXT API("FileTimeToSystemTime",2) value=filetime_to_systemtime(h4_arg(1),h4_arg(2));
  NEXT API("timeBeginPeriod",1) a=h4_arg(1);struct timespec resolution;if(a<1||a>1000||clock_getres(CLOCK_MONOTONIC,&resolution)||resolution.tv_sec||resolution.tv_nsec>(long)a*1000000){value=97;}else timer_period_refs[a]++;
  NEXT API("timeEndPeriod",1) a=h4_arg(1);if(a<1||a>1000||!timer_period_refs[a])value=97;else timer_period_refs[a]--;
  NEXT API("timeGetTime",0) struct timespec t;if(clock_gettime(CLOCK_MONOTONIC,&t))void_fatal("monotonic clock failed");value=(uint32_t)((uint64_t)t.tv_sec*1000+t.tv_nsec/1000000);
@@ -317,6 +336,30 @@ static void selftest(void) {
  uint32_t t=tls_alloc();assert(t!=0xffffffff&&!tls_get(t));assert(tls_set(t,0x1234)&&tls_get(t)==0x1234);assert(!tls_set(1088,1)&&last_error==87);
  /* Exercise the same stdcall dispatch used by generated C. */
  active_import="KERNEL32.dll!HeapCreate";MEM32(g_esp+4)=0;MEM32(g_esp+8)=0;MEM32(g_esp+12)=0;uint32_t sp=g_esp;invoke();assert(g_esp==sp+16&&g_eax);assert(void_heap_destroy(g_eax));g_esp=sp;
+ /* Test real Win32 stdcall entry, leap year, UTC, millisecond truncation and bounds. */
+ uint32_t ft=void_galloc(8),st=void_galloc(20);
+ const struct {uint64_t ticks;uint16_t expected[8];} examples[]={
+  {0ull,{1601,1,1,1,0,0,0,0}},
+  {116444736000000000ull,{1970,1,4,1,0,0,0,0}},
+  {125963012967890000ull,{2000,2,2,29,12,34,56,789}},
+  {133537247991230000ull,{2024,2,4,29,23,59,59,123}}
+ };
+ for(unsigned i=0;i<sizeof examples/sizeof examples[0];i++){
+  MEM32(ft)=(uint32_t)examples[i].ticks;MEM32(ft+4)=(uint32_t)(examples[i].ticks>>32);
+  memset(GPTR(st),0xa5,20);
+  void_set_last_error(0x1234);
+  assert(h4_test_api("KERNEL32.dll!FileTimeToSystemTime",2,ft,st)==1);
+  for(unsigned j=0;j<8;j++)assert(MEM16(st+2*j)==examples[i].expected[j]);
+  assert(MEM32(st+16)==0xa5a5a5a5u&&last_error==0x1234);
+ }
+ MEM32(ft)=0;MEM32(ft+4)=0x80000000u;
+ memset(GPTR(st),0xa5,20);
+ assert(!h4_test_api("KERNEL32.dll!FileTimeToSystemTime",2,ft,st)&&last_error==87);
+ assert(MEM32(st)==0xa5a5a5a5u&&MEM32(st+16)==0xa5a5a5a5u);
+ assert(!h4_test_api("KERNEL32.dll!FileTimeToSystemTime",2,0u,st)&&last_error==87);
+ assert(!h4_test_api("KERNEL32.dll!FileTimeToSystemTime",2,ft,0u)&&last_error==87);
+ void_gfree(ft);void_gfree(st);
+ puts("PASS FILETIME UTC conversion, leap year, boundary and error tests");
  uint32_t ev=object_create(1,0,0,0);assert(ev&&object_wait(ev,0)==258);assert(h4_test_api("KERNEL32.dll!SetEvent",1,ev)==1);assert(!object_wait(ev,0)&&object_wait(ev,0)==258);assert(h4_test_api("KERNEL32.dll!CloseHandle",1,ev));assert(object_wait(ev,0)==0xffffffff&&last_error==6);
  ev=object_create(1,0,1,1);assert(!object_wait(ev,0)&&!object_wait(ev,0));assert(h4_test_api("KERNEL32.dll!ResetEvent",1,ev));assert(object_wait(ev,0)==258);assert(h4_test_api("KERNEL32.dll!CloseHandle",1,ev));
  uint32_t mu=object_create(2,0,0,0);assert(!object_wait(mu,0)&&!object_wait(mu,0));assert(h4_test_api("KERNEL32.dll!ReleaseMutex",1,mu));assert(h4_test_api("KERNEL32.dll!ReleaseMutex",1,mu));assert(!h4_test_api("KERNEL32.dll!ReleaseMutex",1,mu)&&last_error==288);assert(h4_test_api("KERNEL32.dll!CloseHandle",1,mu));
